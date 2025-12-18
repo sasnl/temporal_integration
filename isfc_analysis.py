@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 DATA_DIR = '/Users/tongshan/Documents/TemporalIntegration/data/td/hpf'
 OUTPUT_DIR = '/Users/tongshan/Documents/TemporalIntegration/result'
 # Using same mask file as template/default
-MASK_FILE = '/Users/tongshan/Documents/TemporalIntegration/code/ISCtoolbox_v3_R340/templates/HarvardOxford-cort-maxprob-thr25-2mm.nii'
+MASK_FILE = '/Users/tongshan/Documents/TemporalIntegration/code/ISCtoolbox_v3_R340/templates/MNI152_T1_2mm_brain_mask.nii'
 # Set ROI_ID to a specific integer to run ISFC only on that region
 # If None, runs on valid voxels in mask (WARNING: Whole brain ISFC is huge!)
 ROI_ID = None  # Defaulting to None unless specific ROI analysis is needed
