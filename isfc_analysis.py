@@ -2,17 +2,17 @@ import os
 import glob
 import numpy as np
 import nibabel as nib
-from brainiak.isc import isfc
+from brainiak.isc import isfc, phase_randomize
 import time
 import gc
+import argparse
+import sys
 
 # Configuration
 DATA_DIR = '/Users/tongshan/Documents/TemporalIntegration/data/td/hpf'
 OUTPUT_DIR = '/Users/tongshan/Documents/TemporalIntegration/result'
 # Using same mask file as template/default
 MASK_FILE = '/Users/tongshan/Documents/TemporalIntegration/code/ISCtoolbox_v3_R340/templates/HarvardOxford-cort-maxprob-thr25-2mm.nii'
-# Set ROI_ID to a specific integer to run ISFC only on that region
-# If None, runs on valid voxels in mask (WARNING: Whole brain ISFC is huge!)
 # Set ROI_ID to a specific integer to run ISFC only on that region
 # If None, runs on valid voxels in mask (WARNING: Whole brain ISFC is huge!)
 ROI_ID = None  # Defaulting to None unless specific ROI analysis is needed
@@ -27,6 +27,16 @@ SEED_RADIUS = 5  # Radius in mm. Set to 0 for single voxel.
 # -------------------------------------------------
 CONDITIONS = ['TI1_orig']
 SUBJECTS = ['11012', '11036', '11051', '12501', '12502', '12503', '12505', '12506', '12515', '12516', '12517', '12527', '12530', '12531', '12532', '12538', '12542', '9409']
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Run ISFC analysis with Phase Randomization')
+    parser.add_argument('--n_perms', type=int, default=1000,
+                        help='Number of permutations for statistical testing (default: 1000). Set to 0 to disable stats.')
+    parser.add_argument('--roi_id', type=int, default=ROI_ID,
+                        help='ROI ID (overrides script default)')
+    parser.add_argument('--condition', type=str, default=None,
+                        help='Specific condition to run (default: runs all in script)')
+    return parser.parse_args()
 
 def load_mask(mask_path, roi_id=None):
     print(f"Loading mask from {mask_path}")
@@ -213,33 +223,58 @@ def load_seed_data(group_data_full_brain, seed_mask, whole_brain_mask):
 def run_isfc(data, targets=None):
     """
     Compute ISFC (Inter-Subject Functional Correlation).
-    
-    Parameters
-    ----------
-    data : array_like (TRs, Voxels_1, Subjects)
-        The source data (e.g., Seed).
-    targets : array_like (TRs, Voxels_2, Subjects), optional
-        The target data (e.g., Whole Brain). If None, computes auto-ISFC on `data`.
-    
-    Returns
-    -------
-    isfc_matrix : ndarray 
-        If targets is None: (Voxels_1, Voxels_1)
-        If targets is provided: (Voxels_1, Voxels_2)
-        The group-average leave-one-out ISFC matrix.
     """
-    print("Running ISFC analysis...")
-    # brainiak.isc.isfc computes the ISFC.
-    # pairwise=False: computes leave-one-out ISFCs (one map per subject).
-    # summary_statistic='mean': averages these maps into a single group matrix.
-    
     if targets is None:
         isfc_matrix = isfc(data, pairwise=False, summary_statistic='mean', vectorize_isfcs=False)
     else:
-        print(f"  Computing Seed-to-Voxel ISFC (Source: {data.shape[1]} voxels, Target: {targets.shape[1]} voxels)")
         isfc_matrix = isfc(data, targets, pairwise=False, summary_statistic='mean', vectorize_isfcs=False)
-    
     return isfc_matrix
+
+def run_isfc_stat(data, targets=None, n_perms=1000):
+    """
+    Run ISFC with phase randomization statistical testing.
+    Uses brainiak.isc.phase_randomize for surrogate generation.
+    """
+    print(f"Running ISFC with {n_perms} phase randomization permutations...")
+    
+    # 1. Observed ISFC
+    obs_isfc = run_isfc(data, targets)
+    
+    if n_perms <= 0:
+        return obs_isfc, None
+        
+    # 2. Permutation Loop
+    count_greater = np.zeros_like(obs_isfc)
+    
+    start_time = time.time()
+    for i in range(n_perms):
+        if (i+1) % 10 == 0:
+            print(f"  Permutation {i+1}/{n_perms} ({time.time()-start_time:.1f}s)")
+        
+        # Phase randomize the Source Data (e.g., Seed)
+        # We perform phase randomization on 'data' for each subject independently.
+        # This breaks the synchronization with the 'targets' (which remain fixed).
+        # This is a valid Null Hypothesis for "Is Data synchronized with Targets?".
+        # (Assuming Targets represents the group response).
+        
+        # brainiak.isc.phase_randomize(data, voxelwise=False, random_state=...)
+        # voxelwise=False (default) applies same phase shift to all voxels of a subject (preserves ROI homogeneity)
+        # but different shifts across subjects.
+        
+        surr_data = phase_randomize(data, voxelwise=False, random_state=i)
+        
+        # We do not randomize targets here to save massive computation.
+        # Randomizing one side is sufficient to destroy time-locked correlation.
+        
+        # Compute Null ISFC
+        null_isfc = run_isfc(surr_data, targets)
+        
+        # Update counts (Two-sided test)
+        count_greater += (np.abs(null_isfc) >= np.abs(obs_isfc))
+        
+    p_values = (count_greater + 1) / (n_perms + 1)
+    
+    return obs_isfc, p_values
 
 def save_matrix(matrix, output_path):
     print(f"Saving ISFC matrix to {output_path}")
@@ -266,19 +301,33 @@ def save_nifti(vector_data, mask_file, output_path):
     nib.save(out_img, output_path)
 
 def main():
+    args = parse_args()
+    
+    n_perms = args.n_perms
+    mask_roi_id = args.roi_id
+    specific_condition = args.condition
+    
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
         
-    # Check mode
+    # Check mode (Seed or Matrix) based on Globals (Backward compatibility)
+    # But now using argparse for flow control.
+    
+    mode = "matrix"
     if 'SEED_COORD' in globals() and SEED_COORD is not None:
         mode = "seed"
         print(f"--- MODE: SEED-BASED ISFC (Seed: {SEED_COORD}, Radius: {SEED_RADIUS if 'SEED_RADIUS' in globals() else 0}mm) ---")
         # For seed mode, we generally want the whole brain as the target
+        # So we IGNORE roi_id for loading the 'brain mask', but use it if we really wanted to restrict target?
+        # Usually seed-to-wholebrain uses the full mask.
         mask_roi_id = None 
     else:
-        mode = "matrix"
-        print(f"--- MODE: ROI-ROI MATRIX ISFC (ROI_ID: {ROI_ID}) ---")
-        mask_roi_id = ROI_ID
+        print(f"--- MODE: ROI-ROI MATRIX ISFC (ROI_ID: {mask_roi_id}) ---")
+    
+    if n_perms > 0:
+        print(f"--- STATS: Phase Randomization with {n_perms} permutations ---")
+    else:
+        print(f"--- STATS: OFF ---")
 
     mask, affine = load_mask(MASK_FILE, roi_id=mask_roi_id)
     
@@ -294,8 +343,12 @@ def main():
         
         if expected_size_mb > 2000:
             print("WARNING: Matrix size is > 2GB. Ensure you have enough RAM and disk space.")
+            if n_perms > 0:
+                print("CRITICAL WARNING: Permutation testing on whole-brain matrix is computationally infeasible on most desktops.")
 
-    for condition in CONDITIONS:
+    conditions_to_run = [specific_condition] if specific_condition else CONDITIONS
+
+    for condition in conditions_to_run:
         print(f"\nProcessing {condition}...")
         start_time = time.time()
         
@@ -319,30 +372,43 @@ def main():
             radius = SEED_RADIUS if 'SEED_RADIUS' in globals() else 0
             seed_mask = get_seed_mask(mask.shape, affine, SEED_COORD, radius)
             
-            # 2. Extract seed timeseries
+            # 2. Extract seed timeseries (TRs, 1, Subjects)
             seed_ts = load_seed_data(group_data, seed_mask, mask)
-            # Shape (TRs, 1, Subjects)
             
-            # 3. Run ISFC (Seed vs Whole Brain)
-            # group_data is (TRs, Voxels, Subjects)
-            isfc_result = run_isfc(seed_ts, targets=group_data)
-            # Result shape: (1, Voxels)
+            # 3. Run ISFC with Stats
+            # run_isfc_stat handles everything
+            isfc_result, p_values = run_isfc_stat(seed_ts, targets=group_data, n_perms=n_perms)
             
             # 4. Save as NIfTI
             output_filename = f"isfc_seed{SEED_COORD[0]}_{SEED_COORD[1]}_{SEED_COORD[2]}_r{radius}_{condition}.nii.gz"
             output_path = os.path.join(OUTPUT_DIR, output_filename)
             save_nifti(isfc_result, MASK_FILE, output_path)
             
+            if p_values is not None:
+                p_filename = f"isfc_seed{SEED_COORD[0]}_{SEED_COORD[1]}_{SEED_COORD[2]}_r{radius}_{condition}_pvals.nii.gz"
+                p_path = os.path.join(OUTPUT_DIR, p_filename)
+                save_nifti(p_values, MASK_FILE, p_path)
+                
+                # Save significant map (p < 0.05, two-tailed uncorrected)
+                sig_map = isfc_result.copy()
+                sig_map[p_values >= 0.05] = 0
+                sig_filename = f"isfc_seed{SEED_COORD[0]}_{SEED_COORD[1]}_{SEED_COORD[2]}_r{radius}_{condition}_sig05.nii.gz"
+                save_nifti(sig_map, MASK_FILE, os.path.join(OUTPUT_DIR, sig_filename))
+            
         else:
             # Matrix mode
-            isfc_result = run_isfc(group_data)
+            isfc_result, p_values = run_isfc_stat(group_data, n_perms=n_perms)
             
             # Modify output filename
-            suffix = f"_roi{ROI_ID}" if ROI_ID is not None else "_wholebrain"
+            suffix = f"_roi{mask_roi_id}" if mask_roi_id is not None else "_wholebrain"
             output_filename = f"isfc_{condition}{suffix}.npy"
             output_path = os.path.join(OUTPUT_DIR, output_filename)
-        
             save_matrix(isfc_result, output_path)
+            
+            if p_values is not None:
+                p_filename = f"isfc_{condition}{suffix}_pvals.npy"
+                p_path = os.path.join(OUTPUT_DIR, p_filename)
+                save_matrix(p_values, p_path)
         
         print(f"Finished {condition} in {time.time() - start_time:.2f} seconds")
 
