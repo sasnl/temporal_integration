@@ -7,6 +7,8 @@ import time
 import gc
 import argparse
 import sys
+from nilearn import plotting
+import matplotlib.pyplot as plt
 
 # Configuration
 DATA_DIR = '/Users/tongshan/Documents/TemporalIntegration/data/td/hpf'
@@ -300,6 +302,35 @@ def save_nifti(vector_data, mask_file, output_path):
     out_img = nib.Nifti1Image(out_data, mask_img.affine, mask_img.header)
     nib.save(out_img, output_path)
 
+def save_plot(nifti_path, output_image_path, title):
+    print(f"Generating plot to {output_image_path}")
+    try:
+        display = plotting.plot_stat_map(nifti_path, title=title, display_mode='z', cut_coords=8, colorbar=True)
+        display.savefig(output_image_path)
+        display.close()
+    except Exception as e:
+        print(f"Failed to plot {nifti_path}: {e}")
+
+def save_matrix_plot(matrix, output_image_path, title):
+    print(f"Generating matrix plot to {output_image_path}")
+    try:
+        plt.figure(figsize=(10, 10))
+        # Downsample if too huge?
+        if matrix.shape[0] > 5000:
+            print("  Matrix too large for detailed heatmap, downsampling for display...")
+            # Simple decimation for display
+            display_mat = matrix[::10, ::10]
+        else:
+            display_mat = matrix
+            
+        plt.imshow(display_mat, cmap='RdBu_r', aspect='auto', interpolation='nearest', vmin=-0.5, vmax=0.5)
+        plt.colorbar()
+        plt.title(title)
+        plt.savefig(output_image_path)
+        plt.close()
+    except Exception as e:
+        print(f"Failed to plot matrix: {e}")
+
 def main():
     args = parse_args()
     
@@ -384,6 +415,10 @@ def main():
             output_path = os.path.join(OUTPUT_DIR, output_filename)
             save_nifti(isfc_result, MASK_FILE, output_path)
             
+            # Plot Raw
+            plot_filename = output_filename.replace('.nii.gz', '.png')
+            save_plot(output_path, os.path.join(OUTPUT_DIR, plot_filename), f"Seed ISFC {condition}")
+            
             if p_values is not None:
                 p_filename = f"isfc_seed{SEED_COORD[0]}_{SEED_COORD[1]}_{SEED_COORD[2]}_r{radius}_{condition}_pvals.nii.gz"
                 p_path = os.path.join(OUTPUT_DIR, p_filename)
@@ -393,7 +428,12 @@ def main():
                 sig_map = isfc_result.copy()
                 sig_map[p_values >= 0.05] = 0
                 sig_filename = f"isfc_seed{SEED_COORD[0]}_{SEED_COORD[1]}_{SEED_COORD[2]}_r{radius}_{condition}_sig05.nii.gz"
-                save_nifti(sig_map, MASK_FILE, os.path.join(OUTPUT_DIR, sig_filename))
+                sig_path = os.path.join(OUTPUT_DIR, sig_filename)
+                save_nifti(sig_map, MASK_FILE, sig_path)
+                
+                # Plot Sig
+                sig_plot_filename = sig_filename.replace('.nii.gz', '.png')
+                save_plot(sig_path, os.path.join(OUTPUT_DIR, sig_plot_filename), f"Significant Seed ISFC (p<0.05) {condition}")
             
         else:
             # Matrix mode
@@ -404,6 +444,11 @@ def main():
             output_filename = f"isfc_{condition}{suffix}.npy"
             output_path = os.path.join(OUTPUT_DIR, output_filename)
             save_matrix(isfc_result, output_path)
+            
+            # Plot Matrix
+            if n_voxels <= 10000: # Only plot valid matrices if not insanely huge
+                plot_filename = f"isfc_{condition}{suffix}.png"
+                save_matrix_plot(isfc_result, os.path.join(OUTPUT_DIR, plot_filename), f"ISFC Matrix {condition}")
             
             if p_values is not None:
                 p_filename = f"isfc_{condition}{suffix}_pvals.npy"
