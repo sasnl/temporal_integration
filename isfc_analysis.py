@@ -21,13 +21,12 @@ ROI_ID = None  # Defaulting to None unless specific ROI analysis is needed
 # If SEED_COORD is set, the script will run Seed-to-Voxel ISFC (generating a brain map).
 # ROI_ID will be ignored if SEED_COORD is set.
 # Coordinates should be in the same space as the mask (e.g., MNI mm).
-SEED_COORD = (-2, -54, 26)  # Example: PCC
-SEED_RADIUS = 3  # Radius in mm. Set to 0 for single voxel.
+SEED_COORD = (0, -52, 26)  # PMC
+SEED_RADIUS = 5  # Radius in mm. Set to 0 for single voxel.
 
 # -------------------------------------------------
-# CONDITIONS = ['TI1_orig', 'TI1_sent', 'TI1_word']
-CONDITIONS = ['TI1_orig', 'TI1_sent', 'TI1_word']
-SUBJECTS = ['11051', '12501', '12503', '12505', '12506', '12515', '12516', '12517', '12527', '12530', '12532', '12538', '12542', '9409']
+CONDITIONS = ['TI1_orig']
+SUBJECTS = ['11012', '11036', '11051', '12501', '12502', '12503', '12505', '12506', '12515', '12516', '12517', '12527', '12530', '12531', '12532', '12538', '12542', '9409']
 
 def load_mask(mask_path, roi_id=None):
     print(f"Loading mask from {mask_path}")
