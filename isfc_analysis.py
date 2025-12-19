@@ -158,17 +158,24 @@ def process_chunk_brainiak(target_chunk, all_seeds):
         
         # brainiak.isc.isfc(data, targets, ...)
         # Computes ISFC between data and targets.
-        # Returns (n_vox_data, n_vox_targets) matrix if vectorized=False (default behavior is matrix)
-        # Here data is 1 voxel, targets is V_Chunk.
-        # result shape: (1, V_Chunk)
+        # Returns (n_subjects, 1, V_Chunk) matrix if summary_statistic=None
         
-        # bias correction: res usually (n_seed_vox, n_target_vox). If seed is 1 voxel, might be (n_target_vox,)
-        res = isfc(seed_ts, target_chunk, pairwise=False, summary_statistic='mean', vectorize_isfcs=False)
+        # Get individual subject correlations (Fisher z-transform step 1)
+        res_sub = isfc(seed_ts, target_chunk, pairwise=False, summary_statistic=None, vectorize_isfcs=False)
+        # res_sub shape: (n_subjects, 1, V_Chunk)
         
-        if res.ndim == 1:
-            results[i, :] = res
+        # Fisher z-transform
+        # Clip to avoid infinity at r=1.0 or r=-1.0 (though rare in cross-subject)
+        res_sub = np.clip(res_sub, -0.99999, 0.99999)
+        res_z = np.arctanh(res_sub)
+        
+        # Average Z-scores
+        mean_z = np.mean(res_z, axis=0) # (1, V_Chunk)
+        
+        if mean_z.ndim == 1:
+            results[i, :] = mean_z
         else:
-            results[i, :] = res[0, :]
+            results[i, :] = mean_z[0, :]
         
     return results
 
@@ -249,8 +256,12 @@ def main():
         # NIfTI
         out_name = f"isfc_seed{SEED_COORD[0]}_{SEED_COORD[1]}_{SEED_COORD[2]}{suffix}.nii.gz"
         out_path = os.path.join(OUTPUT_DIR, out_name)
-        save_nifti(obs_isfc_map, MASK_FILE, out_path)
-        save_plot(out_path, out_path.replace('.nii.gz', '.png'), f"Seed ISFC {condition}")
+        
+        # Inverse Fisher z-transform for the saved map (convert Mean Z -> R)
+        obs_isfc_map_r = np.tanh(obs_isfc_map)
+        save_nifti(obs_isfc_map_r, MASK_FILE, out_path)
+        
+        save_plot(out_path, out_path.replace('.nii.gz', '.png'), f"Seed ISFC (Fisher Z-corrected) {condition}")
         
         if p_values is not None:
              p_name = f"isfc_seed{SEED_COORD[0]}_{SEED_COORD[1]}_{SEED_COORD[2]}{suffix}_pvals.nii.gz"

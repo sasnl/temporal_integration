@@ -92,11 +92,22 @@ def load_data(condition, subjects, mask, data_dir):
 def process_chunk(chunk_data, method, n_perms):
     # Helper to run analysis on a single chunk (joblib worker)
     if method == 'bootstrap':
-        chunk_isc = isc(chunk_data, pairwise=False)
-        # bootstrap_isc returns: observed, ci, p, distribution
-        observed, _, p, _ = bootstrap_isc(chunk_isc, pairwise=False, n_bootstraps=n_perms, random_state=42)
+        # 1. Get individual subject ISCs
+        chunk_isc = isc(chunk_data, pairwise=False, summary_statistic=None) # (n_subjects, n_voxels)
+        
+        # 2. Fisher z-transform
+        chunk_isc = np.clip(chunk_isc, -0.99999, 0.99999)
+        chunk_isc_z = np.arctanh(chunk_isc)
+        
+        # 3. Bootstrap on Z-values
+        # bootstrap_isc returns: observed (mean Z), ci, p, distribution
+        observed, _, p, _ = bootstrap_isc(chunk_isc_z, pairwise=False, n_bootstraps=n_perms, random_state=42)
+        
     elif method == 'phaseshift':
         # phaseshift_isc returns: observed, p, distribution
+        # Note: phaseshift_isc in brainiak operates on raw data and computes stat (mean) internally.
+        # It doesn't easily support Z-transform without custom implementation.
+        # We will proceed with standard phaseshift_isc but note this limitation if Z-transform is strictly required.
         observed, p, _ = phaseshift_isc(chunk_data, pairwise=False, n_shifts=n_perms, random_state=42)
     else:
         raise ValueError(f"Unknown method: {method}")
@@ -197,7 +208,16 @@ def main():
         
         # Save raw Mean ISC map
         output_filename = f"isc_{condition}{method_suffix}{roi_suffix}_mean.nii.gz"
-        save_map(mean_isc, mask, affine, os.path.join(OUTPUT_DIR, output_filename))
+        
+        # Inverse transform if observed values are Z-scores (bootstrap method)
+        # For phaseshift, it's likely already R (mean R) unless we modified it, but currently phaseshift is raw.
+        # If method is bootstrap, mean_isc = Mean Z.
+        if method == 'bootstrap':
+            mean_isc_r = np.tanh(mean_isc)
+        else:
+            mean_isc_r = mean_isc
+            
+        save_map(mean_isc_r, mask, affine, os.path.join(OUTPUT_DIR, output_filename))
         
         # Save P-value map
         p_filename = f"isc_{condition}{method_suffix}{roi_suffix}_pvalues.nii.gz"
