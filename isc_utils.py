@@ -71,6 +71,77 @@ def load_data(condition, subjects, mask, data_dir):
         
     return group_data
 
+def coord_to_voxel(affine, coords):
+    """
+    Convert world coordinates to voxel coordinates.
+    """
+    inv_affine = np.linalg.inv(affine)
+    coords_h = np.array(list(coords) + [1])
+    voxel_coords = inv_affine @ coords_h
+    return np.round(voxel_coords[:3]).astype(int)
+
+def get_seed_mask(mask_shape, affine, center_coords, radius_mm):
+    """
+    Create a spherical seed mask within the volume.
+    """
+    print(f"Creating spherical seed mask at {center_coords} with r={radius_mm}mm")
+    center_vox = coord_to_voxel(affine, center_coords)
+    vox_sizes = np.sqrt(np.sum(affine[:3, :3]**2, axis=0))
+    min_vox_size = np.min(vox_sizes)
+    # Calculate radius in voxels
+    voxel_radius = int(np.ceil(radius_mm / min_vox_size)) + 1
+    
+    nx, ny, nz = mask_shape
+    # Bounding box
+    min_x = max(0, center_vox[0] - voxel_radius)
+    max_x = min(nx, center_vox[0] + voxel_radius + 1)
+    min_y = max(0, center_vox[1] - voxel_radius)
+    max_y = min(ny, center_vox[1] + voxel_radius + 1)
+    min_z = max(0, center_vox[2] - voxel_radius)
+    max_z = min(nz, center_vox[2] + voxel_radius + 1)
+    
+    seed_mask = np.zeros(mask_shape, dtype=bool)
+    count = 0
+    for x in range(min_x, max_x):
+        for y in range(min_y, max_y):
+            for z in range(min_z, max_z):
+                pt_vox = np.array([x, y, z, 1])
+                pt_world = affine @ pt_vox
+                dist = np.linalg.norm(pt_world[:3] - np.array(center_coords))
+                if dist <= radius_mm:
+                    seed_mask[x, y, z] = True
+                    count += 1
+    print(f"  Seed mask contains {count} voxels")
+    return seed_mask
+
+def load_seed_data(group_data, seed_mask, whole_brain_mask):
+    """
+    Extract seed timecourse from group data.
+    group_data: (TR, V_Whole, S)
+    seed_mask: 3D boolean mask of seed
+    whole_brain_mask: 3D boolean mask of analysis
+    Returns: seed_ts (TR, 1, S)
+    """
+    # Find intersection of seed and data mask
+    valid_seed_mask = seed_mask & whole_brain_mask
+    if np.sum(valid_seed_mask) == 0:
+        raise ValueError("Seed mask does not overlap with analysis mask.")
+        
+    # Mapping from 3D space to 1D index in group_data
+    # whole_brain_mask defines the 1D indices [0, 1, ..., V_Whole-1]
+    mapping = np.full(whole_brain_mask.shape, -1, dtype=int)
+    mapping[whole_brain_mask] = np.arange(np.sum(whole_brain_mask))
+    
+    seed_indices = mapping[valid_seed_mask]
+    
+    # Check if any indices are -1 (shouldn't happen due to logic above)
+    if np.any(seed_indices == -1):
+         raise ValueError("Error mapping seed indices.")
+         
+    seed_voxels = group_data[:, seed_indices, :] # (TR, V_Seed, S)
+    seed_ts = np.mean(seed_voxels, axis=1, keepdims=True) # (TR, 1, S)
+    return seed_ts
+
 def save_map(data, mask, affine, output_path):
     """
     Save specific data (1D, 3D, or 4D) back to a Nifti file using the mask geometry.
@@ -79,19 +150,27 @@ def save_map(data, mask, affine, output_path):
     print(f"Saving map to {output_path}")
     
     if data.ndim == 1:
-        # 3D Volume case (single map)
+        # 1D Vector case (masked data) -> 3D Volume
         vol_data = np.zeros(mask.shape, dtype=np.float32)
         vol_data[mask] = data
+    elif data.ndim == 3:
+        # 3D Volume case (already shaped)
+        # Verify shape matches mask
+        if data.shape != mask.shape:
+             raise ValueError(f"Data shape {data.shape} does not match mask shape {mask.shape}")
+        vol_data = data
     elif data.ndim == 2:
-        # 4D Volume case (multiple maps, e.g. per subject)
+        # 2D Matrix (Voxels x Time/Samples) -> 4D Volume
+        # Check if first dim matches mask sum (Vector case) or mask shape (impossible if 2D)
+        # Actually in compute script we pass (n_voxels, n_samples).
         n_maps = data.shape[1]
-        # Initialize 4D array: X, Y, Z, T
         vol_shape = mask.shape + (n_maps,)
         vol_data = np.zeros(vol_shape, dtype=np.float32)
         
         # Fill each volume
         for i in range(n_maps):
             temp_vol = np.zeros(mask.shape, dtype=np.float32)
+            # Assuming data is (MaskedVoxels, N)
             temp_vol[mask] = data[:, i]
             vol_data[..., i] = temp_vol
             
