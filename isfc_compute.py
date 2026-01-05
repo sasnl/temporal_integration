@@ -5,13 +5,7 @@ import time
 from brainiak.isc import isfc
 from joblib import Parallel, delayed
 from isc_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data
-
-# Configuration
-DATA_DIR = '/Users/tongshan/Documents/TemporalIntegration/data/td/hpf'
-OUTPUT_DIR = '/Users/tongshan/Documents/TemporalIntegration/result'
-MASK_FILE = '/Users/tongshan/Documents/TemporalIntegration/code/ISCtoolbox_v3_R340/templates/MNI152_T1_2mm_brain_mask.nii'
-CHUNK_SIZE = 5000
-SUBJECTS = ['11051', '12501', '12503', '12505', '12506', '12515', '12516', '12517', '12527', '12530', '12532', '12538', '12542', '9409']
+import config
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Step 1: Compute ISFC Maps (Raw and Fisher-Z)')
@@ -25,6 +19,14 @@ def parse_args():
     parser.add_argument('--seed_y', type=float, required=True, help='Seed Y coordinate (MNI)')
     parser.add_argument('--seed_z', type=float, required=True, help='Seed Z coordinate (MNI)')
     parser.add_argument('--seed_radius', type=float, default=5, help='Seed Radius in mm (default: 5)')
+    
+    # Configurable Paths
+    parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
+                        help=f'Path to input data (default: {config.DATA_DIR})')
+    parser.add_argument('--output_dir', type=str, default=config.OUTPUT_DIR,
+                        help=f'Path to output directory (default: {config.OUTPUT_DIR})')
+    parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
+                        help=f'Path to mask file (default: {config.MASK_FILE})')
     return parser.parse_args()
 
 def compute_isfc_chunk(target_chunk, seed_ts, pairwise):
@@ -64,11 +66,11 @@ def run_isfc_computation(data, seed_ts, pairwise=False):
     print(f"Running ISFC computation (Pairwise={pairwise})")
     n_trs, n_voxels, n_subs = data.shape
     
-    n_chunks = int(np.ceil(n_voxels / CHUNK_SIZE))
+    n_chunks = int(np.ceil(n_voxels / config.CHUNK_SIZE))
     chunks = []
     for i in range(n_chunks):
-        start_idx = i * CHUNK_SIZE
-        end_idx = min((i + 1) * CHUNK_SIZE, n_voxels)
+        start_idx = i * config.CHUNK_SIZE
+        end_idx = min((i + 1) * config.CHUNK_SIZE, n_voxels)
         chunks.append(data[:, start_idx:end_idx, :])
         
     results = Parallel(n_jobs=-1, verbose=5)(
@@ -80,8 +82,8 @@ def run_isfc_computation(data, seed_ts, pairwise=False):
     isfc_maps = np.zeros((n_voxels, sample_dim), dtype=np.float32)
     
     for i, res in enumerate(results):
-        start_idx = i * CHUNK_SIZE
-        end_idx = min((i + 1) * CHUNK_SIZE, n_voxels)
+        start_idx = i * config.CHUNK_SIZE
+        end_idx = min((i + 1) * config.CHUNK_SIZE, n_voxels)
         isfc_maps[start_idx:end_idx, :] = res.T
         
     return isfc_maps
@@ -94,6 +96,10 @@ def main():
     seed_coords = (args.seed_x, args.seed_y, args.seed_z)
     seed_radius = args.seed_radius
     
+    data_dir = args.data_dir
+    output_dir = args.output_dir
+    mask_file = args.mask_file
+    
     pairwise = (method == 'pairwise')
     
     print(f"--- Step 1: ISFC Computation ---")
@@ -101,16 +107,18 @@ def main():
     print(f"Method: {method}")
     print(f"ROI: {roi_id if roi_id else 'Whole Mask'}")
     print(f"Seed: {seed_coords} (r={seed_radius}mm)")
+    print(f"Data Dir: {data_dir}")
+    print(f"Output Dir: {output_dir}")
     
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
         
     # Load Mask
-    mask, affine = load_mask(MASK_FILE, roi_id=roi_id)
+    mask, affine = load_mask(mask_file, roi_id=roi_id)
     if np.sum(mask) == 0: return
 
     # Load Data
-    group_data = load_data(condition, SUBJECTS, mask, DATA_DIR)
+    group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
     if group_data is None: return
     
     start_time = time.time()
@@ -132,17 +140,17 @@ def main():
     seed_suffix = f"_seed{int(seed_coords[0])}_{int(seed_coords[1])}_{int(seed_coords[2])}_r{int(seed_radius)}"
     base_name = f"isfc_{condition}_{method}{seed_suffix}{roi_suffix}"
     
-    raw_path = os.path.join(OUTPUT_DIR, f"{base_name}_desc-raw.nii.gz")
-    z_path = os.path.join(OUTPUT_DIR, f"{base_name}_desc-zscore.nii.gz")
+    raw_path = os.path.join(output_dir, f"{base_name}_desc-raw.nii.gz")
+    z_path = os.path.join(output_dir, f"{base_name}_desc-zscore.nii.gz")
     
     save_map(isfc_raw, mask, affine, raw_path)
     save_map(isfc_z, mask, affine, z_path)
     
     # Save Mean Plot
     mean_z = np.nanmean(isfc_z, axis=1)
-    plot_path = os.path.join(OUTPUT_DIR, f"{base_name}_desc-meanz.png")
+    plot_path = os.path.join(output_dir, f"{base_name}_desc-meanz.png")
     # Temp save mean z for plotting
-    temp_path = os.path.join(OUTPUT_DIR, f"temp_{base_name}.nii.gz")
+    temp_path = os.path.join(output_dir, f"temp_{base_name}.nii.gz")
     save_map(mean_z, mask, affine, temp_path)
     save_plot(temp_path, plot_path, f"Mean ISFC (Z) {condition} {seed_coords}")
     os.remove(temp_path)

@@ -8,12 +8,7 @@ from joblib import Parallel, delayed
 from isc_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data
 from isfc_compute import run_isfc_computation 
 # Import run_isfc_computation to reuse logic for phase shift re-computation
-
-# Configuration
-DATA_DIR = '/Users/tongshan/Documents/TemporalIntegration/data/td/hpf'
-MASK_FILE = '/Users/tongshan/Documents/TemporalIntegration/code/ISCtoolbox_v3_R340/templates/MNI152_T1_2mm_brain_mask.nii'
-SUBJECTS = ['11051', '12501', '12503', '12505', '12506', '12515', '12516', '12517', '12527', '12530', '12532', '12538', '12542', '9409']
-CHUNK_SIZE = 5000
+import config
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Step 2: Statistical Analysis for ISFC')
@@ -33,8 +28,14 @@ def parse_args():
     parser.add_argument('--seed_y', type=float, help='Seed Y (Required for Phase Shift)')
     parser.add_argument('--seed_z', type=float, help='Seed Z (Required for Phase Shift)')
     parser.add_argument('--seed_radius', type=float, default=5, help='Seed Radius (Required for Phase Shift)')
-    parser.add_argument('--output_dir', type=str, default='/Users/tongshan/Documents/TemporalIntegration/result',
-                        help='Output directory')
+    
+    # Configurable Paths
+    parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
+                        help=f'Path to input data (default: {config.DATA_DIR})')
+    parser.add_argument('--output_dir', type=str, default=config.OUTPUT_DIR,
+                        help=f'Output directory (default: {config.OUTPUT_DIR})')
+    parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
+                        help=f'Path to mask file (default: {config.MASK_FILE})')
     return parser.parse_args()
 
 def run_ttest(data_4d):
@@ -100,7 +101,7 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42):
     
     return observed_mean, p_values
 
-def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms):
+def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file):
     """
     Run Phase Shift randomization.
     1. Load Data
@@ -110,10 +111,10 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms):
     """
     print(f"Running Phase Shift (n={n_perms})...")
     
-    mask, affine = load_mask(MASK_FILE, roi_id=roi_id)
+    mask, affine = load_mask(mask_file, roi_id=roi_id)
     if np.sum(mask) == 0: raise ValueError("Empty mask")
     
-    group_data = load_data(condition, SUBJECTS, mask, DATA_DIR)
+    group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
     if group_data is None: raise ValueError("No data")
     
     seed_mask = get_seed_mask(mask.shape, affine, seed_coords, seed_radius)
@@ -175,10 +176,14 @@ def main():
     roi_id = args.roi_id
     threshold = args.threshold
     output_dir = args.output_dir
+    data_dir = args.data_dir
+    mask_file = args.mask_file
     
     print(f"--- Step 2: ISFC Statistics ---")
     print(f"Method: {method}")
     print(f"Threshold: {threshold}")
+    print(f"Output Dir: {output_dir}")
+    print(f"Data Dir: {data_dir}")
     
     mask_affine = None
     mask_data = None
@@ -187,7 +192,7 @@ def main():
     
     if args.roi_id is not None: 
          # Load mask to ensure we have it if needed for phaseshift or map masking
-         mask_data, mask_affine = load_mask(MASK_FILE, roi_id=args.roi_id)
+         mask_data, mask_affine = load_mask(mask_file, roi_id=args.roi_id)
 
     if method == 'phaseshift':
         if not args.condition or args.seed_x is None:
@@ -195,7 +200,8 @@ def main():
             
         seed_coords = (args.seed_x, args.seed_y, args.seed_z)
         mean_map, p_values, mask_data, mask_affine = run_phaseshift(
-            args.condition, args.roi_id, seed_coords, args.seed_radius, args.n_perms
+            args.condition, args.roi_id, seed_coords, args.seed_radius, args.n_perms, 
+            data_dir=data_dir, mask_file=mask_file
         )
         base_name = f"isfc_{args.condition}_{method}"
         
@@ -212,7 +218,7 @@ def main():
         # Or we use the loaded mask.
         if mask_data is None:
              # Load whole brain mask
-             mask_data, _ = load_mask(MASK_FILE, roi_id=None)
+             mask_data, _ = load_mask(mask_file, roi_id=None)
              
         # Apply mask to data_4d if needed (flattening) or just process 4D?
         # T-test/Bootstrap works on arrays.

@@ -5,15 +5,7 @@ import time
 from brainiak.isc import isc
 from joblib import Parallel, delayed
 from isc_utils import load_mask, load_data, save_map, save_plot
-
-# Configuration
-DATA_DIR = '/Users/tongshan/Documents/TemporalIntegration/data/td/hpf'
-OUTPUT_DIR = '/Users/tongshan/Documents/TemporalIntegration/result'
-MASK_FILE = '/Users/tongshan/Documents/TemporalIntegration/code/ISCtoolbox_v3_R340/templates/MNI152_T1_2mm_brain_mask.nii'
-CHUNK_SIZE = 5000
-
-# Default Subjects List (can be overridden or extended if needed, but keeping fixed for now as per original)
-SUBJECTS = ['11051', '12501', '12503', '12505', '12506', '12515', '12516', '12517', '12527', '12530', '12532', '12538', '12542', '9409']
+import config
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Step 1: Compute ISC Maps (Raw and Fisher-Z)')
@@ -23,6 +15,14 @@ def parse_args():
                         help='ISC method: "loo" (Leave-One-Out) or "pairwise"')
     parser.add_argument('--roi_id', type=int, default=None,
                         help='Optional: ROI ID to mask (default: Whole Brain)')
+    
+    # Configurable Paths
+    parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
+                        help=f'Path to input data (default: {config.DATA_DIR})')
+    parser.add_argument('--output_dir', type=str, default=config.OUTPUT_DIR,
+                        help=f'Path to output directory (default: {config.OUTPUT_DIR})')
+    parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
+                        help=f'Path to mask file (default: {config.MASK_FILE})')
     return parser.parse_args()
 
 def compute_isc_chunk(chunk_data, pairwise):
@@ -42,11 +42,11 @@ def run_isc_computation(data, pairwise=False):
     print(f"Running ISC computation (Pairwise={pairwise})")
     n_trs, n_voxels, n_subs = data.shape
     
-    n_chunks = int(np.ceil(n_voxels / CHUNK_SIZE))
+    n_chunks = int(np.ceil(n_voxels / config.CHUNK_SIZE))
     chunks = []
     for i in range(n_chunks):
-        start_idx = i * CHUNK_SIZE
-        end_idx = min((i + 1) * CHUNK_SIZE, n_voxels)
+        start_idx = i * config.CHUNK_SIZE
+        end_idx = min((i + 1) * config.CHUNK_SIZE, n_voxels)
         chunks.append(data[:, start_idx:end_idx, :])
 
     # Parallel execution
@@ -62,8 +62,8 @@ def run_isc_computation(data, pairwise=False):
     isc_maps = np.zeros((n_voxels, sample_dim), dtype=np.float32)
     
     for i, res in enumerate(results):
-        start_idx = i * CHUNK_SIZE
-        end_idx = min((i + 1) * CHUNK_SIZE, n_voxels)
+        start_idx = i * config.CHUNK_SIZE
+        end_idx = min((i + 1) * config.CHUNK_SIZE, n_voxels)
         
         # Transpose to match (n_voxels, n_samples) for easier slicing later
         isc_maps[start_idx:end_idx, :] = res.T
@@ -76,24 +76,31 @@ def main():
     method = args.method
     roi_id = args.roi_id
     
+    # Path Args
+    data_dir = args.data_dir
+    output_dir = args.output_dir
+    mask_file = args.mask_file
+    
     pairwise = (method == 'pairwise')
     
     print(f"--- Step 1: ISC Computation ---")
     print(f"Condition: {condition}")
     print(f"Method: {method}")
     print(f"ROI: {roi_id if roi_id else 'Whole Mask'}")
+    print(f"Data Dir: {data_dir}")
+    print(f"Output Dir: {output_dir}")
     
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
         
     # Load Mask
-    mask, affine = load_mask(MASK_FILE, roi_id=roi_id)
+    mask, affine = load_mask(mask_file, roi_id=roi_id)
     if np.sum(mask) == 0:
         print("Error: Empty mask.")
         return
 
     # Load Data
-    group_data = load_data(condition, SUBJECTS, mask, DATA_DIR)
+    group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
     if group_data is None:
         print("Error: No data loaded.")
         return
@@ -113,8 +120,8 @@ def main():
     roi_suffix = f"_roi{roi_id}" if roi_id is not None else ""
     base_name = f"isc_{condition}_{method}{roi_suffix}"
     
-    raw_path = os.path.join(OUTPUT_DIR, f"{base_name}_desc-raw.nii.gz")
-    z_path = os.path.join(OUTPUT_DIR, f"{base_name}_desc-zscore.nii.gz")
+    raw_path = os.path.join(output_dir, f"{base_name}_desc-raw.nii.gz")
+    z_path = os.path.join(output_dir, f"{base_name}_desc-zscore.nii.gz")
     
     # Save 4D Maps
     save_map(isc_raw, mask, affine, raw_path)
@@ -124,14 +131,14 @@ def main():
     mean_raw = np.nanmean(isc_raw, axis=1)
     mean_z = np.nanmean(isc_z, axis=1) # Mean of Z-scores
     
-    mean_raw_path = os.path.join(OUTPUT_DIR, f"{base_name}_desc-meanraw.nii.gz")
-    mean_z_path = os.path.join(OUTPUT_DIR, f"{base_name}_desc-meanz.nii.gz")
+    mean_raw_path = os.path.join(output_dir, f"{base_name}_desc-meanraw.nii.gz")
+    mean_z_path = os.path.join(output_dir, f"{base_name}_desc-meanz.nii.gz")
     
     save_map(mean_raw, mask, affine, mean_raw_path)
     save_map(mean_z, mask, affine, mean_z_path)
     
     # Save Plot of Mean Z
-    plot_path = os.path.join(OUTPUT_DIR, f"{base_name}_desc-meanz.png")
+    plot_path = os.path.join(output_dir, f"{base_name}_desc-meanz.png")
     save_plot(mean_z_path, plot_path, f"Mean ISC (Fisher-Z) - {condition} - {method}")
     
     print(f"Computation finished in {time.time() - start_time:.2f} seconds.")

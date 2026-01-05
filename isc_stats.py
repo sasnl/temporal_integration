@@ -7,12 +7,7 @@ from scipy.stats import ttest_1samp
 from brainiak.isc import phaseshift_isc
 from joblib import Parallel, delayed
 from isc_utils import load_mask, load_data, save_map, save_plot
-
-# Configuration for Data Reloading (needed for Phase Shift)
-DATA_DIR = '/Users/tongshan/Documents/TemporalIntegration/data/td/hpf'
-MASK_FILE = '/Users/tongshan/Documents/TemporalIntegration/code/ISCtoolbox_v3_R340/templates/MNI152_T1_2mm_brain_mask.nii'
-SUBJECTS = ['11051', '12501', '12503', '12505', '12506', '12515', '12516', '12517', '12527', '12530', '12532', '12538', '12542', '9409']
-CHUNK_SIZE = 5000
+import config
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Step 2: Statistical Analysis for ISC')
@@ -28,8 +23,14 @@ def parse_args():
                         help='Optional: ROI ID to mask (default: Whole Brain)')
     parser.add_argument('--threshold', type=float, default=0.05,
                         help='P-value threshold (default: 0.05)')
-    parser.add_argument('--output_dir', type=str, default='/Users/tongshan/Documents/TemporalIntegration/result',
-                        help='Output directory')
+    
+    # Configurable Paths
+    parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
+                        help=f'Path to input data (default: {config.DATA_DIR})')
+    parser.add_argument('--output_dir', type=str, default=config.OUTPUT_DIR,
+                        help=f'Output directory (default: {config.OUTPUT_DIR})')
+    parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
+                        help=f'Path to mask file (default: {config.MASK_FILE})')
     return parser.parse_args()
 
 def run_ttest(data_4d):
@@ -86,30 +87,30 @@ def process_phaseshift_chunk(chunk_data, n_perms):
     observed, p, _ = phaseshift_isc(chunk_data, pairwise=False, n_shifts=n_perms, random_state=42)
     return observed, p
 
-def run_phaseshift(condition, roi_id, n_perms):
+def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file):
     """
     Run Phase Shift randomization. Requires plain raw data (no Z-score maps).
     """
     print("Running Phase Shift (requires reloading raw data)...")
     
     # Load Mask
-    mask, _ = load_mask(MASK_FILE, roi_id=roi_id)
+    mask, _ = load_mask(mask_file, roi_id=roi_id)
     if np.sum(mask) == 0:
         raise ValueError("Empty mask.")
 
     # Load Data
-    group_data = load_data(condition, SUBJECTS, mask, DATA_DIR)
+    group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
     if group_data is None:
         raise ValueError("No data loaded for phase shift.")
 
     n_trs, n_voxels, n_subs = group_data.shape
     
     # Run in Chunks
-    n_chunks = int(np.ceil(n_voxels / CHUNK_SIZE))
+    n_chunks = int(np.ceil(n_voxels / config.CHUNK_SIZE))
     chunks = []
     for i in range(n_chunks):
-        start_idx = i * CHUNK_SIZE
-        end_idx = min((i + 1) * CHUNK_SIZE, n_voxels)
+        start_idx = i * config.CHUNK_SIZE
+        end_idx = min((i + 1) * config.CHUNK_SIZE, n_voxels)
         chunks.append(group_data[:, start_idx:end_idx, :])
 
     results = Parallel(n_jobs=-1, verbose=5)(
@@ -121,8 +122,8 @@ def run_phaseshift(condition, roi_id, n_perms):
     p_value_map = np.zeros(n_voxels, dtype=np.float32)
     
     for i, (observed, p) in enumerate(results):
-        start_idx = i * CHUNK_SIZE
-        end_idx = min((i + 1) * CHUNK_SIZE, n_voxels)
+        start_idx = i * config.CHUNK_SIZE
+        end_idx = min((i + 1) * config.CHUNK_SIZE, n_voxels)
         mean_map[start_idx:end_idx] = observed
         p_value_map[start_idx:end_idx] = p
         
@@ -134,10 +135,14 @@ def main():
     roi_id = args.roi_id
     threshold = args.threshold
     output_dir = args.output_dir
+    data_dir = args.data_dir
+    mask_file = args.mask_file
     
     print(f"--- Step 2: ISC Statistics ---")
     print(f"Method: {method}")
     print(f"Threshold: {threshold}")
+    print(f"Output Dir: {output_dir}")
+    print(f"Data Dir: {data_dir}")
     
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -151,9 +156,9 @@ def main():
             print("Error: --condition is required for phaseshift.")
             return
         # Phase shift loads its own data/mask inside the function to ensure compatibility
-        mean_map, p_values, mask_data = run_phaseshift(args.condition, roi_id, args.n_perms)
+        mean_map, p_values, mask_data = run_phaseshift(args.condition, roi_id, args.n_perms, data_dir=data_dir, mask_file=mask_file)
         # Need to load mask affine separately if not returned
-        _, mask_affine = load_mask(MASK_FILE, roi_id=roi_id)
+        _, mask_affine = load_mask(mask_file, roi_id=roi_id)
         
         # Base name for output
         base_name = f"isc_{args.condition}_{method}"
@@ -172,7 +177,7 @@ def main():
         # Convert to 2D (voxels, subjects) using mask
         # We need the mask to extract voxels. 
         # If input_map is full brain volume, we need to apply mask.
-        mask_data, _ = load_mask(MASK_FILE, roi_id=roi_id)
+        mask_data, _ = load_mask(mask_file, roi_id=roi_id)
         
         # Check shapes
         if data_4d.shape[:3] != mask_data.shape:
