@@ -4,28 +4,36 @@ This guide explains how to deploy the **TI_code** project to Stanford's Sherlock
 
 ## 1. Transfer Code to Sherlock
 
-Log in to Sherlock and create a project directory (e.g., in `$SCRATCH` for better performance).
+## 1. Transfer Code to Sherlock
 
-```bash
-ssh <your_sunet>@login.sherlock.stanford.edu
-cd $SCRATCH
-mkdir TemporalIntegration
-cd TemporalIntegration
-```
+> [!IMPORTANT]
+> **This step must be run from your LOCAL computer's terminal**, NOT from inside Sherlock. 
+> If you see `No such file or directory`, you are likely running this on Sherlock by mistake.
 
-Copy your local `code` folder to Sherlock (run this from your local machine):
+1.  **Preparation on Sherlock**: 
+    Log in to Sherlock and create a project directory in your scratch space (faster than home).
+    ```bash
+    # [ON SHERLOCK]
+    ssh <your_sunet>@login.sherlock.stanford.edu
+    cd $SCRATCH
+    mkdir -p TemporalIntegration
+    ```
 
-```bash
-# FROM LOCAL MACHINE
-scp -r /Users/tongshan/Documents/TemporalIntegration/code <your_sunet>@login.sherlock.stanford.edu:/scratch/users/<your_sunet>/TemporalIntegration/
-```
+2.  **Transfer Code**:
+    Open a **new** terminal window on your Mac (do not SSH). Run the following to copy the `code` directory using `rsync` (faster and allows excluding files). We exclude `isc_env` because it's Mac-specific.
 
-Also transfer your data (if not already there):
+    ```bash
+    # [ON LOCAL MAC]
+    rsync -avz --exclude 'isc_env' --exclude '__pycache__' --exclude '.git' --exclude '.DS_Store' /Users/tongshan/Documents/TemporalIntegration/code <your_sunet>@login.sherlock.stanford.edu:/scratch/users/<your_sunet>/TemporalIntegration/
+    ```
 
-```bash
-# FROM LOCAL MACHINE
-scp -r /Users/tongshan/Documents/TemporalIntegration/data <your_sunet>@login.sherlock.stanford.edu:/scratch/users/<your_sunet>/TemporalIntegration/
-```
+3.  **Transfer Data**:
+    Similarly, transfer your data folder.
+
+    ```bash
+    # [ON LOCAL MAC]
+    scp -r /Users/tongshan/Documents/TemporalIntegration/data <your_sunet>@login.sherlock.stanford.edu:/scratch/users/<your_sunet>/TemporalIntegration/
+    ```
 
 ## 2. Set Up Environment (One-Time)
 

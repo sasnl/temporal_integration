@@ -17,18 +17,32 @@ Orphan scripts to run the full analysis.
 - **`isfc_compute.py`**: Step 1 of ISFC. Computes seed-based ISFC maps.
 - **`isfc_stats.py`**: Step 2 of ISFC. Performs statistical tests on ISFC maps.
 
+### Configuration
+- **`config.py`**: Central configuration file to set default paths (`DATA_DIR`, `OUTPUT_DIR`, `MASK_FILE`) and subject lists. Edit this file to match your local or HPC environment.
+
 ### Utilities
-- **`isc_utils.py`**: Common helper functions for loading data, masking, and saving NIfTI files.
+- **`isc_utils.py`**: Common helper functions.
 
 ## Dependencies
 
 - Python 3.x
 - [BrainIAK](https://brainiak.org/)
 - [Nilearn](https://nilearn.github.io/)
-- NumPy, SciPy
-- Joblib (for parallelization)
+- NumPy, SciPy, Joblib
+- Matplotlib
+
+Install all dependencies via pip:
+```bash
+pip install -r requirements.txt
+```
+
+## Deployment (Sherlock HPC)
+
+For detailed instructions on deploying and running this code on Stanford's Sherlock cluster, see [Sherlock_Deployment.md](Sherlock_Deployment.md).
 
 ## Usage
+
+You can configure input/output paths either by editing `config.py` (recommended for recurring usage) or by passing command-line arguments.
 
 ### 1. Inter-Subject Correlation (ISC)
 
@@ -38,12 +52,17 @@ Run the full pipeline using `run_isc_pipeline.py`:
 python run_isc_pipeline.py --condition TI1_orig --isc_method loo --stats_method bootstrap --n_perms 1000
 ```
 
-**Arguments:**
+**Key Arguments:**
 - `--condition`: Name of the experimental condition (e.g., `TI1_orig`).
 - `--isc_method`: `loo` (Leave-One-Out) or `pairwise`.
 - `--stats_method`: `ttest`, `bootstrap`, or `phaseshift`.
 - `--roi_id` (Optional): Run analysis within a specific ROI (using Atlas ID).
 - `--threshold`: P-value threshold (default: 0.05).
+
+**Path Arguments (Optional overrides):**
+- `--data_dir`: Path to input data directory.
+- `--output_dir`: Path to save results.
+- `--mask_file`: Path to brain mask file.
 
 ### 2. Inter-Subject Functional Correlation (ISFC)
 
@@ -53,16 +72,18 @@ Run the seed-based ISFC pipeline using `run_isfc_pipeline.py`:
 python run_isfc_pipeline.py --condition TI1_orig --stats_method phaseshift --seed_x 45 --seed_y -30 --seed_z 10
 ```
 
-**Arguments:**
+**Key Arguments:**
 - `--condition`: Condition name.
 - `--seed_x`, `--seed_y`, `--seed_z`: MNI coordinates for the seed.
 - `--seed_radius`: Radius of the seed sphere in mm (default: 5).
 - `--stats_method`: `ttest`, `bootstrap`, or `phaseshift`.
-- `--roi_id` (Optional): Restrict analysis to an ROI.
+
+**Path Arguments:**
+- `--data_dir`, `--output_dir`, `--mask_file`: Override `config.py` defaults.
 
 ## Outputs
 
-Results are saved to the `results/` directory (configured in scripts, defaults to `../result` relative to data or project root typically, check `OUTPUT_DIR` in scripts) with the following naming convention:
+Results are saved to `OUTPUT_DIR` (as defined in `config.py` or arguments) with the following naming convention:
 
 - **ISC Maps**: `isc_{condition}_{method}_desc-zscore.nii.gz`
 - **Significance Maps**: `..._desc-sig_p005.nii.gz`

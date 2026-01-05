@@ -181,7 +181,7 @@ def save_map(data, mask, affine, output_path):
     nib.save(img, output_path)
     return output_path
 
-def save_plot(nifti_path, output_image_path, title):
+def save_plot(nifti_path, output_image_path, title, dpi=300, transparent=True, positive_only=False):
     """
     Generate and save a static plot of a nifti map.
     """
@@ -190,8 +190,30 @@ def save_plot(nifti_path, output_image_path, title):
     # If 4D is passed, we might need to mean it or pick first volume, 
     # but usually this function is called on summary maps (mean/p-value) which are 3D.
     try:
-        display = plotting.plot_stat_map(nifti_path, title=title, display_mode='z', cut_coords=8, colorbar=True)
-        display.savefig(output_image_path)
+        img_to_plot = nifti_path
+        if positive_only:
+            img = nib.load(nifti_path)
+            data = img.get_fdata()
+            # Mask negative values to NaN (better than 0 for transparency/thresholding)
+            data[data < 0] = np.nan
+            img_to_plot = nib.Nifti1Image(data, img.affine)
+
+        # Use black_bg=True for better contrast (standard in fMRI)
+        # If positive_only, disable symmetric colorbar so it doesn't show negative range
+        symmetric_cbar = not positive_only
+        cmap = 'hot' if positive_only else 'cold_hot'
+        
+        display = plotting.plot_stat_map(
+            img_to_plot, 
+            title=title, 
+            display_mode='z', 
+            cut_coords=8, 
+            colorbar=True,
+            black_bg=True,
+            symmetric_cbar=symmetric_cbar,
+            cmap=cmap
+        )
+        display.savefig(output_image_path, dpi=dpi, transparent=transparent)
         display.close()
     except Exception as e:
         print(f"Failed to generate plot: {e}")

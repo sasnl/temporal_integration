@@ -222,7 +222,7 @@ def main():
     
     # 3. Plot
     plot_path = os.path.join(output_dir, f"{base_name}_desc-sig.png")
-    save_plot(sig_path, plot_path, f"Significant ISC ({method}, p<{threshold})")
+    save_plot(sig_path, plot_path, f"Significant ISC ({method}, p<{threshold})", positive_only=True)
     
     print(f"Stats analysis finished.")
     print(f"Outputs:\n  {p_path}\n  {sig_path}")
