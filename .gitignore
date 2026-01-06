@@ -6,3 +6,30 @@ isc_env/
 
 # local environments
 isc_env/
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# environments
+.venv/
+venv/
+env/
+isc_env/
+
+# outputs and logs
+logs/
+*.log
+slurm-*.out
+*.out
+*.err
+
+# OS
+.DS_Store
