@@ -15,15 +15,15 @@
 # CONFIGURATION
 # ==============================================================================
 # Path to your project directory on Sherlock
-PROJECT_ROOT="/scratch/users/$USER/TemporalIntegration"
+PROJECT_ROOT="/scratch/users/tongshan/temporal_integration"
 
 # Environment Name (name of the folder where venv is created)
 ENV_NAME="isc_env"
 
 # Paths (Override defaults here)
-DATA_DIR="$PROJECT_ROOT/data/td/hpf"
-OUTPUT_DIR="$PROJECT_ROOT/result"
-MASK_FILE="$PROJECT_ROOT/code/ISCtoolbox_v3_R340/templates/MNI152_T1_2mm_brain_mask.nii"
+DATA_DIR=""
+OUTPUT_DIR="$PROJECT_ROOT/results"
+MASK_FILE="$PROJECT_ROOT/TI_code/mask/MNI152_T1_2mm_brain_mask.nii"
 
 # Arguments
 CONDITION="TI1_orig"
@@ -43,7 +43,7 @@ ml py-scipy/1.6.3_py39
 ml openmpi
 
 # 2. Activate Virtual Environment
-source $PROJECT_ROOT/code/TI_code/$ENV_NAME/bin/activate
+source $PROJECT_ROOT/code/TI_code/isc_env/bin/activate
 
 # 3. Run Pipeline
 # Note: We pass the paths arguments to override the defaults in config.py

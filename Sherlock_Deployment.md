@@ -16,7 +16,7 @@ This guide explains how to deploy the **TI_code** project to Stanford's Sherlock
     # [ON SHERLOCK]
     ssh <your_sunet>@login.sherlock.stanford.edu
     cd $SCRATCH
-    mkdir -p TemporalIntegration
+    mkdir -p temporal_integration
     ```
 
 2.  **Transfer Code**:
@@ -24,7 +24,7 @@ This guide explains how to deploy the **TI_code** project to Stanford's Sherlock
 
     ```bash
     # [ON LOCAL MAC]
-    rsync -avz --exclude 'isc_env' --exclude '__pycache__' --exclude '.git' --exclude '.DS_Store' /Users/tongshan/Documents/TemporalIntegration/code <your_sunet>@login.sherlock.stanford.edu:/scratch/users/<your_sunet>/TemporalIntegration/
+    rsync -avz --exclude 'isc_env' --exclude '__pycache__' --exclude '.git' --exclude '.DS_Store' /Users/tongshan/Documents/TemporalIntegration/code <your_sunet>@login.sherlock.stanford.edu:/scratch/users/<your_sunet>/temporal_integration/
     ```
 
 3.  **Transfer Data**:
@@ -32,7 +32,7 @@ This guide explains how to deploy the **TI_code** project to Stanford's Sherlock
 
     ```bash
     # [ON LOCAL MAC]
-    scp -r /Users/tongshan/Documents/TemporalIntegration/data <your_sunet>@login.sherlock.stanford.edu:/scratch/users/<your_sunet>/TemporalIntegration/
+    scp -r /Users/tongshan/Documents/TemporalIntegration/data <your_sunet>@login.sherlock.stanford.edu:/scratch/users/<your_sunet>/temporal_integration/
     ```
 
 ## 2. Set Up Environment (One-Time)
@@ -48,7 +48,7 @@ ml openmpi  # Required for BrainIAK
 which python3
 
 # 2. Go to code directory
-cd $SCRATCH/TemporalIntegration/code/TI_code
+cd $SCRATCH/temporal_integration/code/TI_code
 
 # 3. Create Virtual Environment
 python3 -m venv isc_env
@@ -76,9 +76,10 @@ You have two options to configure paths (Data, Output, Mask):
 Edit `code/TI_code/config.py` on Sherlock to match your directories.
 
 ```python
-DATA_DIR = '/scratch/users/YOUR_SUNET/TemporalIntegration/data/td/hpf'
-OUTPUT_DIR = '/scratch/users/YOUR_SUNET/TemporalIntegration/result'
-...
+DATA_DIR = '/scratch/users/YOUR_SUNET/temporal_integration/data/td/hpf'
+OUTPUT_DIR = '/scratch/users/YOUR_SUNET/temporal_integration/results'
+MASK_FILE = '/scratch/users/YOUR_SUNET/temporal_integration/code/TI_code/mask/MNI152_T1_2mm_brain_mask.nii'
+# ...
 ```
 
 ### Option B: Use Command Line Arguments (Recommended for Batch Jobs)
@@ -122,15 +123,15 @@ setfacl -m u:<collaborator_sunet>:x /scratch/users/$USER
 # 2. Grant read/write/execute permission to your project folder
 # -R: Recursive (apply to all files/folders inside)
 # -m: Modify ACL
-setfacl -R -m u:<collaborator_sunet>:rwx /scratch/users/$USER/TemporalIntegration
+setfacl -R -m u:<collaborator_sunet>:rwx /scratch/users/$USER/temporal_integration
 
 # 3. Ensure future files created in this folder inherit these permissions
-setfacl -d -R -m u:<collaborator_sunet>:rwx /scratch/users/$USER/TemporalIntegration
+setfacl -d -R -m u:<collaborator_sunet>:rwx /scratch/users/$USER/temporal_integration
 ```
 
 ### Option B: Grant access to your group
 If your collaborator is in the same unix group as you.
 
 ```bash
-chmod -R g+rX /scratch/users/$USER/TemporalIntegration
+chmod -R g+rX /scratch/users/$USER/temporal_integration
 ```
