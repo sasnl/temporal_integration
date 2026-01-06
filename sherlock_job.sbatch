@@ -28,7 +28,7 @@ MASK_FILE="$PROJECT_ROOT/code/ISCtoolbox_v3_R340/templates/MNI152_T1_2mm_brain_m
 # Arguments
 CONDITION="TI1_orig"
 METHOD="loo"         # loo, pairwise
-STATS="bootstrap"    # ttest, bootstrap, phaseshift
+STATS="phaseshift"   # ttest, bootstrap, phaseshift
 PERMS=1000
 
 # ==============================================================================
