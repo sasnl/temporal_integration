@@ -51,7 +51,7 @@ source $PROJECT_ROOT/code/TI_code/$ENV_NAME/bin/activate
 
 echo "Starting ISC Analysis for $CONDITION"
 
-python $PROJECT_ROOT/code/TI_code/run_isc_pipeline.py \
+python3 $PROJECT_ROOT/code/TI_code/run_isc_pipeline.py \
     --condition $CONDITION \
     --isc_method $METHOD \
     --stats_method $STATS \

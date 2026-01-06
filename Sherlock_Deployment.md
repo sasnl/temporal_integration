@@ -44,11 +44,14 @@ On Sherlock, we will create a fresh Python virtual environment. We **cannot** us
 ml python/3.9.0
 ml openmpi  # Required for BrainIAK
 
+# Check that you are using the correct python (should NOT be /bin/python)
+which python3
+
 # 2. Go to code directory
 cd $SCRATCH/TemporalIntegration/code/TI_code
 
 # 3. Create Virtual Environment
-python -m venv isc_env
+python3 -m venv isc_env
 
 # 4. Activate it
 source isc_env/bin/activate
@@ -59,6 +62,9 @@ pip install --upgrade pip
 # 6. Install Dependencies
 pip install -r requirements.txt
 ```
+
+> [!TIP]
+> **Troubleshooting**: If you see `/bin/python: No module named venv`, it means the `ml python/3.9.0` command wasn't run or didn't work, so the system is trying to use the default (old) system Python. Make sure to run the `ml` commands first!
 
 > **Note:** If `brainiak` fails to install, ensure `openmpi` module is loaded (`ml openmpi`) and you have `mpicc` available.
 
@@ -100,4 +106,31 @@ sbatch sherlock_job.sbatch
 Monitor your job:
 ```bash
 squeue -u $USER
+```
+
+## 5. Sharing & Permissions
+
+By default, your scratch directory is private. To allow collaborators to run your code or view your results, you need to grant them permissions.
+
+### Option A: Grant access to a specific user (Recommended)
+Use Access Control Lists (ACLs) to give a specific user read/execute access.
+
+```bash
+# 1. Grant traverse permission to your scratch root (so they can reach your folder)
+setfacl -m u:<collaborator_sunet>:x /scratch/users/$USER
+
+# 2. Grant read/write/execute permission to your project folder
+# -R: Recursive (apply to all files/folders inside)
+# -m: Modify ACL
+setfacl -R -m u:<collaborator_sunet>:rwx /scratch/users/$USER/TemporalIntegration
+
+# 3. Ensure future files created in this folder inherit these permissions
+setfacl -d -R -m u:<collaborator_sunet>:rwx /scratch/users/$USER/TemporalIntegration
+```
+
+### Option B: Grant access to your group
+If your collaborator is in the same unix group as you.
+
+```bash
+chmod -R g+rX /scratch/users/$USER/TemporalIntegration
 ```
