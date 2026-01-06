@@ -87,4 +87,4 @@ Results are saved to `OUTPUT_DIR` (as defined in `config.py` or arguments) with 
 
 - **ISC Maps**: `isc_{condition}_{method}_desc-zscore.nii.gz`
 - **Significance Maps**: `..._desc-sig_p005.nii.gz`
-- **Plots**: `..._desc-sig.png`
+- **Plots**: `..._desc-sig.png` (300 DPI, transparent background, positive values only, 'hot' colormap)
