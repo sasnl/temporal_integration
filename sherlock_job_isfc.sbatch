@@ -29,7 +29,7 @@ MASK_FILE="$PROJECT_ROOT/TI_code/mask/MNI152_T1_2mm_brain_mask.nii"
 CONDITION="TI1_orig"
 ANALYSIS_METHOD="loo"     # loo, pairwise
 STATS_METHOD="phaseshift" # ttest, bootstrap, phaseshift
-PERMS=1000
+N_PERMS=1000
 CHUNK_SIZE=300000         # Set large to disable chunking if memory permits
 
 # Seed Definition (MNI Coordinates)
@@ -60,7 +60,7 @@ python3 $PROJECT_ROOT/code/TI_code/run_isfc_pipeline.py \
     --condition $CONDITION \
     --analysis_method $ANALYSIS_METHOD \
     --stats_method $STATS_METHOD \
-    --n_perms $PERMS \
+    --n_perms $N_PERMS \
     --seed_x $SEED_X \
     --seed_y $SEED_Y \
     --seed_z $SEED_Z \

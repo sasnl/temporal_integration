@@ -30,6 +30,8 @@ PARAM_FILE="$PROJECT_ROOT/code/TI_code/batch/isfc_params_example.txt"
 # Default shared args
 CHUNK_SIZE=300000
 SEED_RADIUS=5
+# Default Permutations (can be overridden in ARGS)
+N_PERMS=1000
 
 # ==============================================================================
 # EXECUTION
@@ -51,12 +53,13 @@ echo "Job Array ID: $SLURM_ARRAY_JOB_ID, Task ID: $SLURM_ARRAY_TASK_ID"
 echo "Running arguments: $ARGS"
 
 # 4. Run Pipeline
-# Note: seed_radius is often constant, but can be overridden in ARGS if needed
+# Note: seed_radius and n_perms can be overridden in ARGS if needed
 # ARGS from file will take precedence if python argparse is used correctly, 
 # but here we pass defaults. Ensure param file args don't conflict or are clear.
 # To be safe, we pass defaults here, but specific seeds in ARGS.
 
 python3 $PROJECT_ROOT/code/TI_code/run_isfc_pipeline.py \
+    --n_perms $N_PERMS \
     $ARGS \
     --chunk_size $CHUNK_SIZE \
     --seed_radius $SEED_RADIUS \
