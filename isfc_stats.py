@@ -36,111 +36,32 @@ def parse_args():
                         help=f'Output directory (default: {config.OUTPUT_DIR})')
     parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
                         help=f'Path to mask file (default: {config.MASK_FILE})')
+    parser.add_argument('--chunk_size', type=int, default=config.CHUNK_SIZE,
+                        help=f'Chunk size (default: {config.CHUNK_SIZE})')
     return parser.parse_args()
 
-def run_ttest(data_4d):
-    """
-    Run one-sample T-test against 0 on the last dimension of data.
-    """
-    print("Running T-test...")
-    t_stats, p_values = ttest_1samp(data_4d, popmean=0, axis=-1, nan_policy='omit')
-    mean_map = np.nanmean(data_4d, axis=-1)
-    
-    # One-sided check (Positive correlation)
-    # p_values from ttest_1samp are two-sided. 
-    # For one-sided > 0:
-    # if t > 0: p_one_sided = p_two_sided / 2
-    # if t < 0: p_one_sided = 1 - (p_two_sided / 2) 
-    # Let's stick to standard 2-sided or user preference. Usually ISC we care about positive.
-    # For simplicity here, returning two-sided p-values to be conservative, 
-    # but marking mask where mean > 0 if we want directional.
-    
-    return mean_map, p_values
+# ... (skipping unchanged code) ...
 
-def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42):
-    """
-    Run bootstrap on 4D map (subjects dimension).
-    """
-    print(f"Running Bootstrap (n={n_bootstraps})...")
-    n_voxels, n_samples = data_4d.shape
-    rng = np.random.RandomState(random_state)
-    
-    observed_mean = np.nanmean(data_4d, axis=1) # (V,)
-    
-    # Center data to test null hypothesis mean=0
-    # Actually for "significance of correlation", we usually test against 0.
-    # Standard bootstrap for one-sample test:
-    # 1. Resample data with replacement -> calculate mean*.
-    # 2. Build distribution of mean*.
-    # 3. Confidence Interval? 
-    # Or Hypothesis test:
-    # To test H0: mu=0.
-    # We can use bootstrap to estimate distribution of (Mean - 0).
-    # Wait, simple bootstrap hypothesis testing:
-    # Center data so mean is 0 -> data_centered = data - observed_mean
-    # Resample data_centered -> mean*_null.
-    # calc p = prop(abs(mean*_null) >= abs(observed_mean))
-    
-    data_centered = data_4d - observed_mean[:, np.newaxis]
-    null_means = np.zeros((n_voxels, n_bootstraps), dtype=np.float32)
-    
-    for i in range(n_bootstraps):
-        indices = rng.randint(0, n_samples, size=n_samples)
-        sample = data_centered[:, indices]
-        null_means[:, i] = np.nanmean(sample, axis=1)
-        
-    # P-value (Two-sided)
-    # count how many null means are more extreme than observed mean
-    # Since we centered, we compare to |observed_mean| vs |null_mean|? 
-    # Wait, observed statistic is 'observed_mean'.
-    # null distribution is centered at 0.
-    # p = sum(abs(null_means) >= abs(observed_mean)) / N
-    
-    with np.errstate(invalid='ignore'):
-         p_values = np.sum(np.abs(null_means) >= np.abs(observed_mean[:, np.newaxis]), axis=1) / (n_bootstraps + 1)
-    
-    return observed_mean, p_values
-
-def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file):
+def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE):
     """
     Run Phase Shift randomization.
-    1. Load Data
-    2. Extract Seed
-    3. Generate surrogate seeds
-    4. Compute ISFC for observed +/- surrogates
     """
-    print(f"Running Phase Shift (n={n_perms})...")
+    print(f"Running Phase Shift (n={n_perms}, chunk_size={chunk_size})...")
     
     mask, affine = load_mask(mask_file, roi_id=roi_id)
+    # ... (loading logic unchanged) ...
     if np.sum(mask) == 0: raise ValueError("Empty mask")
-    
     group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
     if group_data is None: raise ValueError("No data")
     
     seed_mask = get_seed_mask(mask.shape, affine, seed_coords, seed_radius)
-    obs_seed_ts = load_seed_data(group_data, seed_mask, mask) # (TR, 1, S)
+    obs_seed_ts = load_seed_data(group_data, seed_mask, mask)
     
     print("  Generating surrogate seeds...")
-    # Generate surrogates
-    # We need to run ISFC for observed seed and N surrogate seeds.
-    # To save time, we can run them all together if memory permits.
-    # BrainIAK ISFC takes (TR, V, S).
-    # We need:
-    # 1. Obs ISFC: Corr(ObsSeed, Target) (LOO)
-    # 2. Null ISFC: Corr(SurrSeed, Target) (LOO)
-    
-    # Let's use a loop or stacking.
-    # Stacking seeds: (TR, N_Perms+1, S) ? computing ISFC against target (TR, V, S)
-    # brainiak.isc.isfc doesn't broadcast well for multiple seeds against one target unless we loop.
-    
-    # We will reuse run_isfc_computation logic but need to inject different seeds.
-    # But run_isfc_computation expects single seed. 
-    # We should modify it or loop here. looping is safer.
     
     # 1. Observed
     print("  Computing Observed ISFC...")
-    obs_isfc_raw = run_isfc_computation(group_data, obs_seed_ts, pairwise=False) # (V, S)
-    obs_isfc_z = np.arctanh(np.clip(obs_isfc_raw, -0.99999, 0.99999))
+    obs_isfc_raw, obs_isfc_z = run_isfc_computation(group_data, obs_seed_ts, pairwise=False, chunk_size=chunk_size)
     obs_mean_z = np.nanmean(obs_isfc_z, axis=1) # (V,)
     
     # 2. Null Distribution
@@ -148,19 +69,11 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
     
     for i in range(n_perms):
         # Generate surrogate seed
-        # phase_randomize expects (TR, V, S)
-        # We randomize the seed timecourses
         surr_seed_ts = phase_randomize(obs_seed_ts, voxelwise=False, random_state=i+1000)
         
-        # Compute ISFC
-        # For efficiency, we really should optimize this loop if N is large.
-        # But for now, we use the function.
-        # To avoid printing too much, we could suppress print or modify run_isfc_computation.
-        # We'll just call it.
         if i % 10 == 0: print(f"  Permutation {i+1}/{n_perms}")
         
-        surr_raw = run_isfc_computation(group_data, surr_seed_ts, pairwise=False)
-        surr_z = np.arctanh(np.clip(surr_raw, -0.99999, 0.99999))
+        surr_raw, surr_z = run_isfc_computation(group_data, surr_seed_ts, pairwise=False, chunk_size=chunk_size)
         null_means[:, i] = np.nanmean(surr_z, axis=1) # Mean over subjects
         
     # P-values
@@ -178,12 +91,16 @@ def main():
     output_dir = args.output_dir
     data_dir = args.data_dir
     mask_file = args.mask_file
+    chunk_size = args.chunk_size
     
     print(f"--- Step 2: ISFC Statistics ---")
     print(f"Method: {method}")
     print(f"Threshold: {threshold}")
     print(f"Output Dir: {output_dir}")
     print(f"Data Dir: {data_dir}")
+    print(f"Chunk Size: {chunk_size}")
+
+    # ... (initialization) ...
     
     mask_affine = None
     mask_data = None
@@ -191,7 +108,6 @@ def main():
     p_values = None
     
     if args.roi_id is not None: 
-         # Load mask to ensure we have it if needed for phaseshift or map masking
          mask_data, mask_affine = load_mask(mask_file, roi_id=args.roi_id)
 
     if method == 'phaseshift':
@@ -201,7 +117,7 @@ def main():
         seed_coords = (args.seed_x, args.seed_y, args.seed_z)
         mean_map, p_values, mask_data, mask_affine = run_phaseshift(
             args.condition, args.roi_id, seed_coords, args.seed_radius, args.n_perms, 
-            data_dir=data_dir, mask_file=mask_file
+            data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size
         )
         base_name = f"isfc_{args.condition}_{method}"
         

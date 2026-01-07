@@ -30,6 +30,7 @@ CONDITION="TI1_orig"
 METHOD="loo"         # loo, pairwise
 STATS="phaseshift"   # ttest, bootstrap, phaseshift
 PERMS=1000
+CHUNK_SIZE=300000    # Set large (e.g. 300000) to disable chunking if you have enough RAM
 
 # ==============================================================================
 # EXECUTION
@@ -56,6 +57,7 @@ python3 $PROJECT_ROOT/code/TI_code/run_isc_pipeline.py \
     --isc_method $METHOD \
     --stats_method $STATS \
     --n_perms $PERMS \
+    --chunk_size $CHUNK_SIZE \
     --data_dir "$DATA_DIR" \
     --output_dir "$OUTPUT_DIR" \
     --mask_file "$MASK_FILE"

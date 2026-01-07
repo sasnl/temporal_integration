@@ -57,20 +57,28 @@ def compute_isfc_chunk(target_chunk, seed_ts, pairwise):
     res = isfc(seed_ts, target_chunk, pairwise=pairwise, summary_statistic=None, vectorize_isfcs=False)
     # res shape: (n_samples, 1, V_Chunk)
     
-    return res.squeeze(axis=1) # (n_samples, V_Chunk)
+    isfc_raw = res.squeeze(axis=1) # (n_samples, V_Chunk)
+    
+    # Fischer Z transformation for the chunk
+    isfc_raw_clipped = np.clip(isfc_raw, -0.99999, 0.99999)
+    isfc_z = np.arctanh(isfc_raw_clipped)
+    
+    return isfc_raw, isfc_z
 
-def run_isfc_computation(data, seed_ts, pairwise=False):
+def run_isfc_computation(data, seed_ts, pairwise=False, chunk_size=config.CHUNK_SIZE):
     """
     Run ISFC computation in parallel chunks.
+    data: (TRs, Voxels, Subjects)
+    seed_ts: (TRs, 1, Subjects)
     """
-    print(f"Running ISFC computation (Pairwise={pairwise})")
+    print(f"Running ISFC computation (Pairwise={pairwise}, Chunk Size: {chunk_size})")
     n_trs, n_voxels, n_subs = data.shape
     
-    n_chunks = int(np.ceil(n_voxels / config.CHUNK_SIZE))
+    n_chunks = int(np.ceil(n_voxels / chunk_size))
     chunks = []
     for i in range(n_chunks):
-        start_idx = i * config.CHUNK_SIZE
-        end_idx = min((i + 1) * config.CHUNK_SIZE, n_voxels)
+        start_idx = i * chunk_size
+        end_idx = min((i + 1) * chunk_size, n_voxels)
         chunks.append(data[:, start_idx:end_idx, :])
         
     results = Parallel(n_jobs=-1, verbose=5)(
@@ -78,15 +86,20 @@ def run_isfc_computation(data, seed_ts, pairwise=False):
     )
     
     # Reassemble
-    sample_dim = results[0].shape[0]
-    isfc_maps = np.zeros((n_voxels, sample_dim), dtype=np.float32)
+    # result shape from compute_isfc_chunk is (isfc_raw_chunk, isfc_z_chunk)
+    # where each chunk is (n_samples, V_Chunk)
+    sample_dim = results[0][0].shape[0] # Get n_samples from the first raw chunk
     
-    for i, res in enumerate(results):
-        start_idx = i * config.CHUNK_SIZE
-        end_idx = min((i + 1) * config.CHUNK_SIZE, n_voxels)
-        isfc_maps[start_idx:end_idx, :] = res.T
+    isfc_raw = np.zeros((n_voxels, sample_dim), dtype=np.float32)
+    isfc_z = np.zeros((n_voxels, sample_dim), dtype=np.float32)
+    
+    for i, (r_chunk, z_chunk) in enumerate(results):
+        start_idx = i * chunk_size
+        end_idx = min((i + 1) * chunk_size, n_voxels)
+        isfc_raw[start_idx:end_idx, :] = r_chunk.T
+        isfc_z[start_idx:end_idx, :] = z_chunk.T
         
-    return isfc_maps
+    return isfc_raw, isfc_z
 
 def main():
     args = parse_args()
@@ -99,6 +112,7 @@ def main():
     data_dir = args.data_dir
     output_dir = args.output_dir
     mask_file = args.mask_file
+    chunk_size = args.chunk_size
     
     pairwise = (method == 'pairwise')
     
@@ -107,6 +121,7 @@ def main():
     print(f"Method: {method}")
     print(f"ROI: {roi_id if roi_id else 'Whole Mask'}")
     print(f"Seed: {seed_coords} (r={seed_radius}mm)")
+    print(f"Chunk Size: {chunk_size}")
     print(f"Data Dir: {data_dir}")
     print(f"Output Dir: {output_dir}")
     

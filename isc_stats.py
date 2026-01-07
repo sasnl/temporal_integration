@@ -31,6 +31,8 @@ def parse_args():
                         help=f'Output directory (default: {config.OUTPUT_DIR})')
     parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
                         help=f'Path to mask file (default: {config.MASK_FILE})')
+    parser.add_argument('--chunk_size', type=int, default=config.CHUNK_SIZE,
+                        help=f'Chunk size (default: {config.CHUNK_SIZE})')
     return parser.parse_args()
 
 def run_ttest(data_4d):
@@ -87,47 +89,56 @@ def process_phaseshift_chunk(chunk_data, n_perms):
     observed, p, _ = phaseshift_isc(chunk_data, pairwise=False, n_shifts=n_perms, random_state=42)
     return observed, p
 
-def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file):
+def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE):
     """
-    Run Phase Shift randomization. Requires plain raw data (no Z-score maps).
+    Run Phase Shift randomization.
     """
-    print("Running Phase Shift (requires reloading raw data)...")
+    print(f"Running Phase Shift (n={n_perms}, chunk_size={chunk_size})...")
     
-    # Load Mask
-    mask, _ = load_mask(mask_file, roi_id=roi_id)
-    if np.sum(mask) == 0:
-        raise ValueError("Empty mask.")
-
-    # Load Data
+    mask, affine = load_mask(mask_file, roi_id=roi_id)
+    if np.sum(mask) == 0: raise ValueError("Empty mask")
+    
     group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
-    if group_data is None:
-        raise ValueError("No data loaded for phase shift.")
-
+    if group_data is None: raise ValueError("No data")
+    
     n_trs, n_voxels, n_subs = group_data.shape
     
-    # Run in Chunks
-    n_chunks = int(np.ceil(n_voxels / config.CHUNK_SIZE))
-    chunks = []
-    for i in range(n_chunks):
-        start_idx = i * config.CHUNK_SIZE
-        end_idx = min((i + 1) * config.CHUNK_SIZE, n_voxels)
-        chunks.append(group_data[:, start_idx:end_idx, :])
-
-    results = Parallel(n_jobs=-1, verbose=5)(
-        delayed(process_phaseshift_chunk)(chunk, n_perms) for chunk in chunks
-    )
+    # 1. Compute Observed ISC
+    obs_raw, obs_z = run_isc_computation(group_data, chunk_size=chunk_size)
+    obs_mean = np.nanmean(obs_z, axis=1) # (V,)
     
-    # Reassemble
-    mean_map = np.zeros(n_voxels, dtype=np.float32)
-    p_value_map = np.zeros(n_voxels, dtype=np.float32)
+    # 2. Phase Randomization
+    # ...
     
-    for i, (observed, p) in enumerate(results):
-        start_idx = i * config.CHUNK_SIZE
-        end_idx = min((i + 1) * config.CHUNK_SIZE, n_voxels)
-        mean_map[start_idx:end_idx] = observed
-        p_value_map[start_idx:end_idx] = p
+    # Optimization: To avoid re-computing full ISC n_perms times, 
+    # usually we can do it more efficiently? 
+    # BrainIAK phase_randomize randomizes the time series.
+    # Then we run ISC.
+    
+    count_greater = np.zeros(n_voxels, dtype=int)
+    
+    # Parallelizing permutations is expensive if we copy memory.
+    # Better to run loop or small batches.
+    
+    rng = np.random.RandomState(42)
+    
+    for i in range(n_perms):
+        if i % 10 == 0: print(f"  Permutation {i}/{n_perms}")
         
-    return mean_map, p_value_map, mask
+        # Shift each subject
+        shifted_data = np.zeros_like(group_data)
+        for s in range(n_subs):
+            shifted_data[:, :, s] = phase_randomize(group_data[:, :, s], random_state=rng)
+            
+        # Compute Null ISC
+        null_raw, null_z = run_isc_computation(shifted_data, chunk_size=chunk_size)
+        null_mean = np.nanmean(null_z, axis=1)
+        
+        count_greater += (np.abs(null_mean) >= np.abs(obs_mean))
+        
+    p_values = (count_greater + 1) / (n_perms + 1)
+    
+    return obs_mean, p_values, mask, affine 
 
 def main():
     args = parse_args()
@@ -137,6 +148,7 @@ def main():
     output_dir = args.output_dir
     data_dir = args.data_dir
     mask_file = args.mask_file
+    chunk_size = args.chunk_size
     
     print(f"--- Step 2: ISC Statistics ---")
     print(f"Method: {method}")
@@ -156,9 +168,10 @@ def main():
             print("Error: --condition is required for phaseshift.")
             return
         # Phase shift loads its own data/mask inside the function to ensure compatibility
-        mean_map, p_values, mask_data = run_phaseshift(args.condition, roi_id, args.n_perms, data_dir=data_dir, mask_file=mask_file)
-        # Need to load mask affine separately if not returned
-        _, mask_affine = load_mask(mask_file, roi_id=roi_id)
+        mean_map, p_values, mask_data, mask_affine = run_phaseshift(
+            args.condition, roi_id, args.n_perms, 
+            data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size
+        )
         
         # Base name for output
         base_name = f"isc_{args.condition}_{method}"

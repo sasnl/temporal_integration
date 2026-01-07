@@ -60,9 +60,10 @@ python run_isc_pipeline.py --condition TI1_orig --isc_method loo --stats_method 
 - `--threshold`: P-value threshold (default: 0.05).
 
 **Path Arguments (Optional overrides):**
-- `--data_dir`: Path to input data directory.
-- `--output_dir`: Path to save results.
-- `--mask_file`: Path to brain mask file.
+- `--data_dir`: Path to input data directory (overrides `config.py`).
+- `--output_dir`: Path to output directory (overrides `config.py`).
+- `--mask_file`: Path to mask file (overrides `config.py`).
+- `--chunk_size`: Number of voxels per chunk (default: 5000). Set to a large number (e.g., 300000) to disable chunking.
 
 ### 2. Inter-Subject Functional Correlation (ISFC)
 

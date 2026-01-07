@@ -45,7 +45,8 @@ def main():
     path_args = [
         '--data_dir', args.data_dir,
         '--output_dir', args.output_dir,
-        '--mask_file', args.mask_file
+        '--mask_file', args.mask_file,
+        '--chunk_size', str(args.chunk_size)
     ]
     
     # 1. Run Step 1: ISC Computation

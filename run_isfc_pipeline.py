@@ -41,6 +41,8 @@ def main():
                         help=f'Path to output directory (default: {config.OUTPUT_DIR})')
     parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
                         help=f'Path to mask file (default: {config.MASK_FILE})')
+    parser.add_argument('--chunk_size', type=int, default=config.CHUNK_SIZE,
+                        help=f'Chunk size (default: {config.CHUNK_SIZE})')
     
     args = parser.parse_args()
     
@@ -48,21 +50,16 @@ def main():
     path_args = [
         '--data_dir', args.data_dir,
         '--output_dir', args.output_dir,
-        '--mask_file', args.mask_file
+        '--mask_file', args.mask_file,
+        '--chunk_size', str(args.chunk_size)
     ]
     
     # 1. Run Computation
-    # We always run computation first unless phaseshift (which consumes raw data directly),
-    # BUT phaseshift is "Stats", so do we need "Compute"?
-    # If stats_method == 'phaseshift', we might skip `isfc_compute.py` or run it just to get observed map?
-    # Actually `isfc_stats.py` with `phaseshift` re-calculates observed ISFC inside to ensure consistency with surrogates.
-    # However, `isfc_compute.py` produces the "Raw" and "Z" maps as files, which is useful to have anyway.
-    # So we will run Compute first to get the main maps, then Stats.
-    # If Stats == PhaseShift, it will re-do some work, but that's acceptable for modularity.
+    # ...
     
     print("\n=== STEP 1: COMPUTATION ===")
     compute_cmd = [
-        "python", "code/TI_code/isfc_compute.py",
+        sys.executable, "code/TI_code/isfc_compute.py",
         "--condition", args.condition,
         "--method", args.analysis_method,
         "--seed_x", str(args.seed_x),
@@ -87,7 +84,7 @@ def main():
     input_map = os.path.join(output_dir, f"{base_name}_desc-zscore.nii.gz")
     
     stats_cmd = [
-        "python", "code/TI_code/isfc_stats.py",
+        sys.executable, "code/TI_code/isfc_stats.py",
         "--method", args.stats_method,
         "--threshold", str(args.threshold),
         "--n_perms", str(args.n_perms)
