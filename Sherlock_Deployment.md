@@ -98,10 +98,10 @@ python run_isc_pipeline.py --condition TI1_orig
 ```
 
 ### Batch Submission
-Edit the `sherlock_job.sbatch` file to point to your correct paths, then submit:
+Edit the `sherlock_job_isc.sbatch` file (or `sherlock_job_isfc.sbatch`) to point to your correct paths, then submit:
 
 ```bash
-sbatch sherlock_job.sbatch
+sbatch sherlock_job_isc.sbatch
 ```
 
 Monitor your job:
