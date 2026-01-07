@@ -27,6 +27,8 @@ def parse_args():
                         help=f'Path to output directory (default: {config.OUTPUT_DIR})')
     parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
                         help=f'Path to mask file (default: {config.MASK_FILE})')
+    parser.add_argument('--chunk_size', type=int, default=config.CHUNK_SIZE,
+                        help=f'Chunk size (default: {config.CHUNK_SIZE})')
     return parser.parse_args()
 
 def compute_isfc_chunk(target_chunk, seed_ts, pairwise):
@@ -143,12 +145,11 @@ def main():
     seed_ts = load_seed_data(group_data, seed_mask, mask) # (TR, 1, S)
     print(f"Seed timecourse loaded: {seed_ts.shape}")
     
-    # Compute Raw ISFC
-    isfc_raw = run_isfc_computation(group_data, seed_ts, pairwise=pairwise)
+    # Compute Raw and Z ISFC
+    isfc_raw, isfc_z = run_isfc_computation(group_data, seed_ts, pairwise=pairwise, chunk_size=chunk_size)
     
-    # Fischer Z
-    isfc_raw_clipped = np.clip(isfc_raw, -0.99999, 0.99999)
-    isfc_z = np.arctanh(isfc_raw_clipped)
+    # Fischer Z (Already computed in run_isfc_computation)
+
     
     # Save Maps
     roi_suffix = f"_roi{roi_id}" if roi_id is not None else ""

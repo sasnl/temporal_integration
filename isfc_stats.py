@@ -119,7 +119,9 @@ def main():
             args.condition, args.roi_id, seed_coords, args.seed_radius, args.n_perms, 
             data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size
         )
-        base_name = f"isfc_{args.condition}_{method}"
+        seed_suffix = f"_seed{int(seed_coords[0])}_{int(seed_coords[1])}_{int(seed_coords[2])}_r{int(args.seed_radius)}"
+        base_name = f"isfc_{args.condition}_{method}{seed_suffix}"
+
         
     else: # Map based
         if not args.input_map:
