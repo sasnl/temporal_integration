@@ -1,0 +1,2 @@
+--condition TI1_orig --seed_x 45 --seed_y -30 --seed_z 10 --stats_method phaseshift
+--condition TI1_orig --seed_x -45 --seed_y -30 --seed_z 10 --stats_method phaseshift

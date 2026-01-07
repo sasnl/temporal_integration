@@ -1,0 +1,2 @@
+--condition TI1_orig --isc_method loo --stats_method phaseshift --n_perms 1000
+--condition TI1_orig --isc_method pairwise --stats_method phaseshift --n_perms 1000
