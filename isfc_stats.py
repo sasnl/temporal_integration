@@ -40,7 +40,41 @@ def parse_args():
                         help=f'Chunk size (default: {config.CHUNK_SIZE})')
     return parser.parse_args()
 
-# ... (skipping unchanged code) ...
+    return parser.parse_args()
+
+def run_ttest(data_4d):
+    """
+    Run one-sample T-test against 0 on the last dimension of data.
+    """
+    print("Running T-test...")
+    t_stats, p_values = ttest_1samp(data_4d, popmean=0, axis=-1, nan_policy='omit')
+    mean_map = np.nanmean(data_4d, axis=-1)
+    
+    return mean_map, p_values
+
+def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42):
+    """
+    Run bootstrap on 4D map (subjects dimension).
+    """
+    print(f"Running Bootstrap (n={n_bootstraps})...")
+    n_voxels, n_samples = data_4d.shape
+    rng = np.random.RandomState(random_state)
+    
+    observed_mean = np.nanmean(data_4d, axis=1) # (V,)
+    
+    data_centered = data_4d - observed_mean[:, np.newaxis]
+    null_means = np.zeros((n_voxels, n_bootstraps), dtype=np.float32)
+    
+    for i in range(n_bootstraps):
+        indices = rng.randint(0, n_samples, size=n_samples)
+        sample = data_centered[:, indices]
+        null_means[:, i] = np.nanmean(sample, axis=1)
+        
+    with np.errstate(invalid='ignore'):
+         p_values = np.sum(np.abs(null_means) >= np.abs(observed_mean[:, np.newaxis]), axis=1) / (n_bootstraps + 1)
+    
+    return observed_mean, p_values
+
 
 def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE):
     """
@@ -177,7 +211,7 @@ def main():
     
     # 3. Plot
     plot_path = os.path.join(output_dir, f"{base_name}_desc-sig.png")
-    save_plot(sig_path, plot_path, f"Sig ISFC ({method}, p<{threshold})")
+    save_plot(sig_path, plot_path, f"Sig ISFC ({method}, p<{threshold})", positive_only=True)
     
     print("Done")
     print(f"Outputs:\n  {sig_path}")
