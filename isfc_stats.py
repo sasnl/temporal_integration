@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import nibabel as nib
 from scipy.stats import ttest_1samp
-from brainiak.isc import phase_randomize
+from brainiak.utils.utils import phase_randomize
 from joblib import Parallel, delayed
 from isc_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data
 from isfc_compute import run_isfc_computation 
@@ -214,7 +214,7 @@ def main():
     save_plot(sig_path, plot_path, f"Sig ISFC ({method}, p<{threshold})", positive_only=True)
     
     print("Done")
-    print(f"Outputs:\n  {sig_path}")
+    print(f"Outputs:\n  {p_path}\n  {sig_path}")
 
 if __name__ == "__main__":
     main()
