@@ -217,7 +217,7 @@ def main():
     save_plot(sig_path, plot_path, f"Sig ISFC ({method}, p<{threshold})", positive_only=True)
     
     print("Done")
-    print(f"Outputs:\n  {p_path}\n  {sig_path}")
+    print(f"Outputs:\n  {p_path}\n  {sig_path}\n  {plot_path}")
 
 if __name__ == "__main__":
     main()

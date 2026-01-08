@@ -44,6 +44,10 @@ def run_command(cmd):
         sys.exit(1)
 
 def main():
+    import time
+    start_time = time.time()
+    print(f"Pipeline started at: {time.ctime(start_time)}")
+
     args = parse_args()
     
     python_exec = sys.executable
@@ -101,6 +105,9 @@ def main():
     run_command(cmd_step2)
     
     print("\n=== PIPELINE COMPLETE ===")
+    end_time = time.time()
+    print(f"Pipeline finished at: {time.ctime(end_time)}")
+    print(f"Total execution time: {end_time - start_time:.2f} seconds")
 
 if __name__ == "__main__":
     main()

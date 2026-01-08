@@ -50,6 +50,10 @@ def parse_args():
     return parser.parse_args()
 
 def main():
+    import time
+    start_time = time.time()
+    print(f"Pipeline started at: {time.ctime(start_time)}")
+
     args = parse_args()
     
     python_exec = sys.executable
@@ -120,6 +124,9 @@ def main():
     run_command(stats_cmd)
     
     print("\n=== PIPELINE COMPLETE ===")
+    end_time = time.time()
+    print(f"Pipeline finished at: {time.ctime(end_time)}")
+    print(f"Total execution time: {end_time - start_time:.2f} seconds")
 
 if __name__ == "__main__":
     main()

@@ -35,43 +35,72 @@ def load_data(condition, subjects, mask, data_dir):
     Load fMRI data for a list of subjects and a specific condition, applying a mask.
     Returns: group_data (n_TRs, n_voxels, n_subjects)
     """
-    print(f"Loading data for condition: {condition}")
+    import time
+
+    print(f"Loading data for condition: {condition}", flush=True)
     data_list = []
-    
+
     cond_dir = os.path.join(data_dir, condition)
-    
+
     for sub in subjects:
         search_pattern = os.path.join(cond_dir, f"{sub}_*.nii")
+
+        print(f"[{condition}] {sub}: glob start -> {search_pattern}", flush=True)
         files = glob.glob(search_pattern)
-        
+        print(f"[{condition}] {sub}: glob done ({len(files)} files)", flush=True)
+
         if not files:
-            print(f"Warning: No file found for subject {sub} in {condition}")
+            print(f"Warning: No file found for subject {sub} in {condition}", flush=True)
             continue
-        
+
         file_path = files[0]
-        # print(f"  Loading {os.path.basename(file_path)}")
-        
+
+        print(f"[{condition}] {sub}: nib.load start -> {file_path}", flush=True)
         img = nib.load(file_path)
-        data = img.get_fdata(dtype=np.float32)
+        print(f"[{condition}] {sub}: nib.load done", flush=True)
+
+        print(f"[{condition}] {sub}: get_fdata start", flush=True)
+        data = img.get_fdata(dtype=np.float32)  # (X, Y, Z, T)
+        print(f"[{condition}] {sub}: get_fdata done {data.shape}", flush=True)
+        #DE updated and reshaped and masked in 2 to reduce boolean indexing of 4D array sllowing down loading of the data.         
+
+        print(f"[{condition}] {sub}: reshape start", flush=True)
+        x, y, z, t = data.shape
+
+        t0 = time.time()
+        data_2d = data.reshape(-1, t)      # (X*Y*Z, T)
+        mask_1d = mask.reshape(-1)         # (X*Y*Z,)
+        print(f"[{condition}] {sub}: reshape done in {time.time()-t0:.2f}s", flush=True)
         
-        # Apply mask
-        masked_data = data[mask].T
+        print(f"[{condition}] {sub}: mask apply start", flush=True)
+        t1 = time.time()
+        masked_data = data_2d[mask_1d, :].T  # (T, n_voxels)
         masked_data = np.nan_to_num(masked_data)
+        print(f"[{condition}] {sub}: mask apply done in {time.time()-t1:.2f}s shape={masked_data.shape}", flush=True)
+
+        # sanity checks
+        if masked_data.shape[0] != t:
+            raise ValueError(f"Time dimension mismatch for {sub}: got {masked_data.shape[0]} expected {t}")
+        if masked_data.shape[1] != int(mask.sum()):
+            raise ValueError(f"Voxel count mismatch for {sub}: got {masked_data.shape[1]} expected {int(mask.sum())}")
+
         data_list.append(masked_data)
-        
+
     if not data_list:
         return None
-    
+
     n_trs = [d.shape[0] for d in data_list]
     min_tr = min(n_trs)
-    
+
     n_voxels = data_list[0].shape[1]
     n_subs = len(data_list)
-    
+
+    print(f"[{condition}] stacking: n_subs={n_subs}, n_voxels={n_voxels}, min_tr={min_tr}", flush=True)
+
     group_data = np.zeros((min_tr, n_voxels, n_subs), dtype=np.float32)
     for i, d in enumerate(data_list):
         group_data[:, :, i] = d[:min_tr, :]
-        
+
     return group_data
 
 def coord_to_voxel(affine, coords):
