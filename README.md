@@ -6,17 +6,27 @@ The pipeline is designed to be modular, separating computation (Step 1) from sta
 
 ## Project Structure
 
-### Directories
-- **`isc/`**: Contains scripts for Inter-Subject Correlation analysis.
-    - `run_isc_pipeline.py`: Orchestrates ISC analysis.
-    - `isc_compute.py`, `isc_stats.py`: Core compute and stats scripts.
-- **`isfc/`**: Contains scripts for Inter-Subject Functional Connectivity analysis.
-    - `run_isfc_pipeline.py`: Orchestrates ISFC analysis.
-    - `isfc_compute.py`, `isfc_stats.py`: Core compute and stats scripts.
-- **`shared/`**: Common utilities and configuration.
-    - `config.py`: Central configuration file.
-    - `pipeline_utils.py`: Shared helper functions.
-- **`archive/`**: Deprecated scripts.
+### Directory Structure Overview
+
+```text
+code/TI_code/
+├── isc/                  # Inter-Subject Correlation analysis
+│   ├── run_isc_pipeline.py
+│   ├── isc_compute.py
+│   └── isc_stats.py
+├── isfc/                 # Inter-Subject Functional Connectivity analysis
+│   ├── run_isfc_pipeline.py
+│   ├── isfc_compute.py
+│   └── isfc_stats.py
+├── shared/               # Shared utilities and configuration
+│   ├── config.py
+│   └── pipeline_utils.py
+├── mask/                 # Standard brain masks
+│   └── MNI152_T1_2mm_brain_mask.nii
+├── batch/                # SLURM batch scripts for HPC
+├── requirements.txt      # Python dependencies
+└── README.md             # This file
+```
 
 ## Dependencies
 
