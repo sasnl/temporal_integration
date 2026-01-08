@@ -4,6 +4,9 @@ import numpy as np
 import nibabel as nib
 from nilearn import plotting
 import matplotlib.pyplot as plt
+from brainiak.isc import isc
+from joblib import Parallel, delayed
+import config
 
 def load_mask(mask_path, roi_id=None):
     """
@@ -217,3 +220,57 @@ def save_plot(nifti_path, output_image_path, title, dpi=300, transparent=True, p
         display.close()
     except Exception as e:
         print(f"Failed to generate plot: {e}")
+
+def compute_isc_chunk(chunk_data, pairwise):
+    """
+    Compute ISC for a single chunk of data.
+    """
+    # isc() returns shape (n_subjects, n_voxels) for pairwise=False (LOO)
+    # isc() returns shape (n_pairs, n_voxels) for pairwise=True
+    # Note: brainiak.isc.isc default is pairwise=False (Leave-one-out)
+    raw_isc = isc(chunk_data, pairwise=pairwise)
+    
+    # Compute Fisher-Z for the chunk
+    raw_isc_clipped = np.clip(raw_isc, -0.99999, 0.99999)
+    z_isc = np.arctanh(raw_isc_clipped)
+    
+    return raw_isc, z_isc
+
+def run_isc_computation(data, pairwise=False, chunk_size=config.CHUNK_SIZE):
+    """
+    Run ISC computation in parallel chunks.
+    Returns: isc_raw (n_voxels, n_samples), isc_z (n_voxels, n_samples)
+             where n_samples is n_subjects (LOO) or n_pairs.
+    """
+    print(f"Running ISC computation (Pairwise={pairwise}, Chunk Size: {chunk_size})")
+    n_trs, n_voxels, n_subs = data.shape
+    
+    n_chunks = int(np.ceil(n_voxels / chunk_size))
+    chunks = []
+    for i in range(n_chunks):
+        start_idx = i * chunk_size
+        end_idx = min((i + 1) * chunk_size, n_voxels)
+        chunks.append(data[:, start_idx:end_idx, :])
+
+    # Parallel execution
+    results = Parallel(n_jobs=-1, verbose=5)(
+        delayed(compute_isc_chunk)(chunk, pairwise) for chunk in chunks
+    )
+    
+    # Reassemble
+    # Determine output shape from first result
+    # Result shape from isc is (n_samples, n_chunk_voxels)
+    sample_dim = results[0][0].shape[0] # Get sample_dim from raw_isc part of the first result
+    
+    isc_raw = np.zeros((n_voxels, sample_dim), dtype=np.float32)
+    isc_z = np.zeros((n_voxels, sample_dim), dtype=np.float32)
+    
+    for i, (r_chunk, z_chunk) in enumerate(results):
+        start_idx = i * chunk_size
+        end_idx = min((i + 1) * chunk_size, n_voxels)
+        
+        # Transpose to match (n_voxels, n_samples) for easier slicing later
+        isc_raw[start_idx:end_idx, :] = r_chunk.T
+        isc_z[start_idx:end_idx, :] = z_chunk.T
+        
+    return isc_raw, isc_z

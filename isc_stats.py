@@ -4,9 +4,8 @@ import numpy as np
 import time
 import nibabel as nib
 from scipy.stats import ttest_1samp
-from brainiak.isc import phaseshift_isc
-from joblib import Parallel, delayed
-from isc_utils import load_mask, load_data, save_map, save_plot
+from brainiak.utils.utils import phase_randomize
+from isc_utils import load_mask, load_data, save_map, save_plot, run_isc_computation
 import config
 
 def parse_args():
@@ -83,11 +82,7 @@ def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42):
     
     return observed_mean, p_values
 
-def process_phaseshift_chunk(chunk_data, n_perms):
-    # phaseshift_isc returns: observed, p, distribution
-    # pairwise=False (LOO) is standard for group
-    observed, p, _ = phaseshift_isc(chunk_data, pairwise=False, n_shifts=n_perms, random_state=42)
-    return observed, p
+
 
 def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE):
     """

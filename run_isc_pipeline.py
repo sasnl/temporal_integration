@@ -26,6 +26,8 @@ def parse_args():
                         help=f'Output directory (default: {config.OUTPUT_DIR})')
     parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
                         help=f'Path to mask file (default: {config.MASK_FILE})')
+    parser.add_argument('--chunk_size', type=int, default=5000,
+                        help='Chunk size for processing (default: 5000)')
     return parser.parse_args()
 
 def run_command(cmd):
