@@ -2,8 +2,10 @@ import os
 import argparse
 import numpy as np
 import time
-from isc_utils import load_mask, load_data, save_map, save_plot, run_isc_computation
+import sys
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
 import config
+from pipeline_utils import load_mask, load_data, save_map, save_plot, run_isc_computation
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Step 1: Compute ISC Maps (Raw and Fisher-Z)')

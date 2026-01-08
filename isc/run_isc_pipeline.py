@@ -2,6 +2,10 @@ import os
 import argparse
 import subprocess
 import sys
+import os
+
+# Add shared directory to path
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
 import config
 
 def parse_args():
@@ -31,11 +35,13 @@ def parse_args():
     return parser.parse_args()
 
 def run_command(cmd):
-    print(f"\n[Pipeline] Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=False, text=True)
-    if result.returncode != 0:
-        print(f"Error running command: {cmd}")
-        sys.exit(result.returncode)
+    """Run a shell command and check for errors."""
+    print(f"Running: {' '.join(cmd)}")
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error running command: {e}")
+        sys.exit(1)
 
 def main():
     args = parse_args()
@@ -52,6 +58,7 @@ def main():
     ]
     
     # 1. Run Step 1: ISC Computation
+    print("\n=== STEP 1: ISC COMPUTATION ===")
     compute_script = os.path.join(script_dir, 'isc_compute.py')
     cmd_step1 = [
         python_exec, compute_script,
@@ -68,10 +75,11 @@ def main():
     # Naming convention in isc_compute.py:
     # isc_{condition}_{method}{roi_suffix}_desc-zscore.nii.gz
     roi_suffix = f"_roi{args.roi_id}" if args.roi_id is not None else ""
-    output_dir = args.output_dir # Use arg instead of hardcode
+    output_dir = args.output_dir
     z_map_file = os.path.join(output_dir, f"isc_{args.condition}_{args.isc_method}{roi_suffix}_desc-zscore.nii.gz")
     
     # 2. Run Step 2: Statistics
+    print("\n=== STEP 2: ISC STATISTICS ===")
     stats_script = os.path.join(script_dir, 'isc_stats.py')
     cmd_step2 = [
         python_exec, stats_script,
@@ -92,7 +100,7 @@ def main():
         
     run_command(cmd_step2)
     
-    print("\n[Pipeline] Analysis Complete.")
+    print("\n=== PIPELINE COMPLETE ===")
 
 if __name__ == "__main__":
     main()

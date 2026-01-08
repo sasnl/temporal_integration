@@ -56,9 +56,9 @@ source $PROJECT_ROOT/code/TI_code/isc_env/bin/activate
 echo "Starting ISFC Analysis for $CONDITION"
 echo "Seed: ($SEED_X, $SEED_Y, $SEED_Z), Radius: $SEED_RADIUS"
 
-python3 $PROJECT_ROOT/code/TI_code/run_isfc_pipeline.py \
+python3 $PROJECT_ROOT/code/TI_code/isfc/run_isfc_pipeline.py \
     --condition $CONDITION \
-    --analysis_method $ANALYSIS_METHOD \
+    --isfc_method $ANALYSIS_METHOD \
     --stats_method $STATS_METHOD \
     --n_perms $N_PERMS \
     --seed_x $SEED_X \

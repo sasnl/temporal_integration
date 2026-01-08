@@ -58,7 +58,7 @@ echo "Running arguments: $ARGS"
 # but here we pass defaults. Ensure param file args don't conflict or are clear.
 # To be safe, we pass defaults here, but specific seeds in ARGS.
 
-python3 $PROJECT_ROOT/code/TI_code/run_isfc_pipeline.py \
+python3 $PROJECT_ROOT/code/TI_code/isfc/run_isfc_pipeline.py \
     --n_perms $N_PERMS \
     $ARGS \
     --chunk_size $CHUNK_SIZE \

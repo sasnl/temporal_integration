@@ -6,22 +6,17 @@ The pipeline is designed to be modular, separating computation (Step 1) from sta
 
 ## Project Structure
 
-### Pipelines
-Orphan scripts to run the full analysis.
-- **`run_isc_pipeline.py`**: Orchestrates the ISC analysis (Compute + Stats).
-- **`run_isfc_pipeline.py`**: Orchestrates the ISFC analysis (Compute + Stats).
-
-### Core Scripts
-- **`isc_compute.py`**: Step 1 of ISC. Computes raw and Fisher-Z transformed ISC maps.
-- **`isc_stats.py`**: Step 2 of ISC. Performs statistical tests (T-test, Bootstrap, Phase Shift) on ISC maps.
-- **`isfc_compute.py`**: Step 1 of ISFC. Computes seed-based ISFC maps.
-- **`isfc_stats.py`**: Step 2 of ISFC. Performs statistical tests on ISFC maps.
-
-### Configuration
-- **`config.py`**: Central configuration file to set default paths (`DATA_DIR`, `OUTPUT_DIR`, `MASK_FILE`) and subject lists. Edit this file to match your local or HPC environment.
-
-### Utilities
-- **`isc_utils.py`**: Common helper functions.
+### Directories
+- **`isc/`**: Contains scripts for Inter-Subject Correlation analysis.
+    - `run_isc_pipeline.py`: Orchestrates ISC analysis.
+    - `isc_compute.py`, `isc_stats.py`: Core compute and stats scripts.
+- **`isfc/`**: Contains scripts for Inter-Subject Functional Connectivity analysis.
+    - `run_isfc_pipeline.py`: Orchestrates ISFC analysis.
+    - `isfc_compute.py`, `isfc_stats.py`: Core compute and stats scripts.
+- **`shared/`**: Common utilities and configuration.
+    - `config.py`: Central configuration file.
+    - `pipeline_utils.py`: Shared helper functions.
+- **`archive/`**: Deprecated scripts.
 
 ## Dependencies
 
@@ -42,14 +37,14 @@ For detailed instructions on deploying and running this code on Stanford's Sherl
 
 ## Usage
 
-You can configure input/output paths either by editing `config.py` (recommended for recurring usage) or by passing command-line arguments.
+You can configure input/output paths either by editing `shared/config.py` (recommended for recurring usage) or by passing command-line arguments.
 
 ### 1. Inter-Subject Correlation (ISC)
 
-Run the full pipeline using `run_isc_pipeline.py`:
+Run the full pipeline using `isc/run_isc_pipeline.py`:
 
 ```bash
-python run_isc_pipeline.py --condition TI1_orig --isc_method loo --stats_method bootstrap --n_perms 1000
+python isc/run_isc_pipeline.py --condition TI1_orig --isc_method loo --stats_method bootstrap --n_perms 1000
 ```
 
 **Key Arguments:**
@@ -67,10 +62,10 @@ python run_isc_pipeline.py --condition TI1_orig --isc_method loo --stats_method 
 
 ### 2. Inter-Subject Functional Correlation (ISFC)
 
-Run the seed-based ISFC pipeline using `run_isfc_pipeline.py`:
+Run the seed-based ISFC pipeline using `isfc/run_isfc_pipeline.py`:
 
 ```bash
-python run_isfc_pipeline.py --condition TI1_orig --stats_method phaseshift --seed_x 45 --seed_y -30 --seed_z 10
+python isfc/run_isfc_pipeline.py --condition TI1_orig --stats_method phaseshift --seed_x 45 --seed_y -30 --seed_z 10
 ```
 
 **Key Arguments:**
@@ -78,6 +73,7 @@ python run_isfc_pipeline.py --condition TI1_orig --stats_method phaseshift --see
 - `--seed_x`, `--seed_y`, `--seed_z`: MNI coordinates for the seed.
 - `--seed_radius`: Radius of the seed sphere in mm (default: 5).
 - `--stats_method`: `ttest`, `bootstrap`, or `phaseshift`.
+- `--isfc_method`: `loo` or `pairwise`.
 
 **Path Arguments:**
 - `--data_dir`, `--output_dir`, `--mask_file`: Override `config.py` defaults.

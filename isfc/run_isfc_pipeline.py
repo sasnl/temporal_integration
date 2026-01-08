@@ -2,6 +2,9 @@ import argparse
 import subprocess
 import os
 import sys
+
+# Add shared directory to path
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
 import config
 
 def run_command(cmd):
@@ -13,7 +16,7 @@ def run_command(cmd):
         print(f"Error running command: {e}")
         sys.exit(1)
 
-def main():
+def parse_args():
     parser = argparse.ArgumentParser(description='Run ISFC Analysis Pipeline (Compute + Stats)')
     
     # Common Args
@@ -25,7 +28,7 @@ def main():
     parser.add_argument('--seed_radius', type=float, default=5, help='Seed Radius mm')
     
     # Compute Args
-    parser.add_argument('--analysis_method', type=str, choices=['loo', 'pairwise'], default='loo', 
+    parser.add_argument('--isfc_method', type=str, choices=['loo', 'pairwise'], default='loo', 
                         help='ISFC Method: loo or pairwise')
     
     # Stats Args
@@ -44,7 +47,13 @@ def main():
     parser.add_argument('--chunk_size', type=int, default=config.CHUNK_SIZE,
                         help=f'Chunk size (default: {config.CHUNK_SIZE})')
     
-    args = parser.parse_args()
+    return parser.parse_args()
+
+def main():
+    args = parse_args()
+    
+    python_exec = sys.executable
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     
     # Path Arguments to pass down
     path_args = [
@@ -55,13 +64,13 @@ def main():
     ]
     
     # 1. Run Computation
-    # ...
+    print("\n=== STEP 1: ISFC COMPUTATION ===")
+    compute_script = os.path.join(script_dir, 'isfc_compute.py')
     
-    print("\n=== STEP 1: COMPUTATION ===")
     compute_cmd = [
-        sys.executable, "code/TI_code/isfc_compute.py",
+        python_exec, compute_script,
         "--condition", args.condition,
-        "--method", args.analysis_method,
+        "--method", args.isfc_method,
         "--seed_x", str(args.seed_x),
         "--seed_y", str(args.seed_y),
         "--seed_z", str(args.seed_z),
@@ -73,18 +82,19 @@ def main():
     run_command(compute_cmd)
     
     # 2. Run Statistics
-    print("\n=== STEP 2: STATISTICS ===")
+    print("\n=== STEP 2: ISFC STATISTICS ===")
     
     # Determine input filename from Compute step
     roi_suffix = f"_roi{args.roi_id}" if args.roi_id is not None else ""
     seed_suffix = f"_seed{int(args.seed_x)}_{int(args.seed_y)}_{int(args.seed_z)}_r{int(args.seed_radius)}"
-    base_name = f"isfc_{args.condition}_{args.analysis_method}{seed_suffix}{roi_suffix}"
+    base_name = f"isfc_{args.condition}_{args.isfc_method}{seed_suffix}{roi_suffix}"
     output_dir = args.output_dir
     # Use Z-score map for T-test/Bootstrap
     input_map = os.path.join(output_dir, f"{base_name}_desc-zscore.nii.gz")
     
+    stats_script = os.path.join(script_dir, 'isfc_stats.py')
     stats_cmd = [
-        sys.executable, "code/TI_code/isfc_stats.py",
+        python_exec, stats_script,
         "--method", args.stats_method,
         "--threshold", str(args.threshold),
         "--n_perms", str(args.n_perms)
@@ -104,9 +114,6 @@ def main():
     else:
         # Map-based args
         stats_cmd.extend(["--input_map", input_map])
-        # Pass ROI info if strictly needed? 
-        # isfc_stats logic: if input_map is provided and roi_id not provided, it masks with whole brain? 
-        # Ideally we should pass roi_id so it uses the same mask.
         if args.roi_id:
              stats_cmd.extend(["--roi_id", str(args.roi_id)])
              

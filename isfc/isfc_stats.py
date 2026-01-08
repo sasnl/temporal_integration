@@ -5,7 +5,10 @@ import nibabel as nib
 from scipy.stats import ttest_1samp
 from brainiak.utils.utils import phase_randomize
 from joblib import Parallel, delayed
-from isc_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
+from pipeline_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data
 from isfc_compute import run_isfc_computation 
 # Import run_isfc_computation to reuse logic for phase shift re-computation
 import config

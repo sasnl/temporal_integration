@@ -4,7 +4,10 @@ import numpy as np
 import time
 from brainiak.isc import isfc
 from joblib import Parallel, delayed
-from isc_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
+from pipeline_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data
 import config
 
 def parse_args():
@@ -132,12 +135,16 @@ def main():
         
     # Load Mask
     mask, affine = load_mask(mask_file, roi_id=roi_id)
-    if np.sum(mask) == 0: return
+    if np.sum(mask) == 0: 
+        print("Error: Empty mask.")
+        return
 
     # Load Data
     group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
-    if group_data is None: return
-    
+    if group_data is None: 
+        print("Error: Failed to load data.")
+        return
+
     start_time = time.time()
     
     # Prepare Seed

@@ -5,8 +5,11 @@ import time
 import nibabel as nib
 from scipy.stats import ttest_1samp
 from brainiak.utils.utils import phase_randomize
-from isc_utils import load_mask, load_data, save_map, save_plot, run_isc_computation
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
 import config
+from pipeline_utils import load_mask, load_data, save_map, save_plot, run_isc_computation
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Step 2: Statistical Analysis for ISC')
