@@ -81,6 +81,7 @@ python isfc/run_isfc_pipeline.py --condition TI1_orig --stats_method phaseshift 
 **Key Arguments:**
 - `--condition`: Condition name.
 - `--seed_x`, `--seed_y`, `--seed_z`: MNI coordinates for the seed.
+- `--seed_file`: Path to NIfTI ROI file to use as seed (Mutually exclusive with coordinates).
 - `--seed_radius`: Radius of the seed sphere in mm (default: 5).
 - `--stats_method`: `ttest`, `bootstrap`, or `phaseshift`.
 - `--isfc_method`: `loo` or `pairwise`.
