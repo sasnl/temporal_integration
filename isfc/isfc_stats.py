@@ -8,7 +8,7 @@ from joblib import Parallel, delayed
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
-from pipeline_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data
+from pipeline_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data, apply_cluster_threshold
 from isfc_compute import run_isfc_computation 
 # Import run_isfc_computation to reuse logic for phase shift re-computation
 import config
@@ -27,6 +27,8 @@ def parse_args():
                         help='Number of permutations/bootstraps (default: 1000)')
     parser.add_argument('--threshold', type=float, default=0.05,
                         help='P-value threshold (default: 0.05)')
+    parser.add_argument('--cluster_threshold', type=int, default=0,
+                        help='Cluster extent threshold (min voxels). Default: 0')
     parser.add_argument('--seed_x', type=float, help='Seed X (Required for Phase Shift)')
     parser.add_argument('--seed_y', type=float, help='Seed Y (Required for Phase Shift)')
     parser.add_argument('--seed_z', type=float, help='Seed Z (Required for Phase Shift)')
@@ -228,7 +230,11 @@ def main():
     sig_map[p_values >= threshold] = 0
     # Also mask out 0s if they were 0 originally
     
-    sig_path = os.path.join(output_dir, f"{base_name}_desc-sig_p{str(threshold).replace('.', '')}.nii.gz")
+    if args.cluster_threshold > 0:
+        sig_map = apply_cluster_threshold(sig_map, args.cluster_threshold)
+        
+    clust_suffix = f"_clust{args.cluster_threshold}" if args.cluster_threshold > 0 else ""
+    sig_path = os.path.join(output_dir, f"{base_name}_desc-sig_p{str(threshold).replace('.', '')}{clust_suffix}.nii.gz")
     save_map(sig_map, mask_data, mask_affine, sig_path)
     
     # 3. Plot

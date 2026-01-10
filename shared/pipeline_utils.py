@@ -6,6 +6,7 @@ from nilearn import plotting
 import matplotlib.pyplot as plt
 from brainiak.isc import isc
 from joblib import Parallel, delayed
+from scipy.ndimage import label
 import config
 
 def load_mask(mask_path, roi_id=None):
@@ -303,3 +304,48 @@ def run_isc_computation(data, pairwise=False, chunk_size=config.CHUNK_SIZE):
         isc_z[start_idx:end_idx, :] = z_chunk.T
         
     return isc_raw, isc_z
+
+def apply_cluster_threshold(img_data, cluster_size):
+    """
+    Apply cluster-size thresholding to a statistical map.
+    img_data: 3D numpy array (thresholded statistical map, where insig voxels are 0)
+    cluster_size: Minimum number of voxels for a cluster to be kept.
+    """
+    if cluster_size <= 0:
+        return img_data
+
+    print(f"Applying cluster threshold: k={cluster_size}")
+    
+    # Binarize for clustering
+    binary_map = np.abs(img_data) > 0 
+    
+    # Label clusters
+    # default struct is 3x3x3 connectivity for 3D
+    labeled_array, num_features = label(binary_map)
+    print(f"  Found {num_features} initial clusters.")
+    
+    if num_features == 0:
+        return img_data
+    
+    # Calculate sizes
+    # labeled_array is 0 for background, 1..N for clusters
+    cluster_sizes = np.bincount(labeled_array.ravel())
+    
+    # Identitfy small clusters (labels) to remove
+    # We want to keep labels where size >= cluster_size
+    # Note: cluster_sizes[0] is background, we ignore it for "keeping" purposes (it remains 0)
+    
+    valid_labels = np.where(cluster_sizes >= cluster_size)[0]
+    # Filter out 0 (background)
+    valid_labels = valid_labels[valid_labels > 0]
+    
+    # Create a mask of voxels that belong to valid clusters
+    valid_mask = np.isin(labeled_array, valid_labels)
+    
+    cleaned_data = img_data.copy()
+    cleaned_data[~valid_mask] = 0
+    
+    n_kept = len(valid_labels)
+    print(f"  Removed {num_features - n_kept} small clusters. Kept {n_kept}.")
+    
+    return cleaned_data

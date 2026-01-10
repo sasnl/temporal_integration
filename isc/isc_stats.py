@@ -9,7 +9,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
 import config
-from pipeline_utils import load_mask, load_data, save_map, save_plot, run_isc_computation
+from pipeline_utils import load_mask, load_data, save_map, save_plot, run_isc_computation, apply_cluster_threshold
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Step 2: Statistical Analysis for ISC')
@@ -25,6 +25,8 @@ def parse_args():
                         help='Optional: ROI ID to mask (default: Whole Brain)')
     parser.add_argument('--threshold', type=float, default=0.05,
                         help='P-value threshold (default: 0.05)')
+    parser.add_argument('--cluster_threshold', type=int, default=0,
+                        help='Cluster extent threshold (min voxels). Default: 0 (no threshold)')
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
@@ -228,7 +230,13 @@ def main():
     sig_map = np.zeros_like(mean_map)
     sig_map[sig_indices] = mean_map[sig_indices]
     
-    sig_path = os.path.join(output_dir, f"{base_name}_desc-sig_p{str(threshold).replace('.', '')}.nii.gz")
+    
+    # Apply cluster threshold if requested
+    if args.cluster_threshold > 0:
+        sig_map = apply_cluster_threshold(sig_map, args.cluster_threshold)
+        
+    clust_suffix = f"_clust{args.cluster_threshold}" if args.cluster_threshold > 0 else ""
+    sig_path = os.path.join(output_dir, f"{base_name}_desc-sig_p{str(threshold).replace('.', '')}{clust_suffix}.nii.gz")
     save_map(sig_map, mask_data, mask_affine, sig_path)
     
     # 3. Plot
