@@ -22,6 +22,8 @@ def parse_args():
                         help='Number of permutations/bootstraps')
     parser.add_argument('--threshold', type=float, default=0.05,
                         help='P-value threshold')
+    parser.add_argument('--cluster_threshold', type=int, default=0,
+                        help='Cluster extent threshold (min voxels). Default: 0')
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
@@ -89,6 +91,7 @@ def main():
         python_exec, stats_script,
         '--method', args.stats_method,
         '--threshold', str(args.threshold),
+        '--cluster_threshold', str(args.cluster_threshold),
         '--n_perms', str(args.n_perms)
     ] + path_args
     
