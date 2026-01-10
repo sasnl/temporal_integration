@@ -31,6 +31,7 @@ def parse_args():
     parser.add_argument('--seed_y', type=float, help='Seed Y (Required for Phase Shift)')
     parser.add_argument('--seed_z', type=float, help='Seed Z (Required for Phase Shift)')
     parser.add_argument('--seed_radius', type=float, default=5, help='Seed Radius (Required for Phase Shift)')
+    parser.add_argument('--seed_file', type=str, help='Seed File (Optional for Phase Shift)')
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
@@ -79,7 +80,7 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42):
     return observed_mean, p_values
 
 
-def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE):
+def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE, seed_file=None):
     """
     Run Phase Shift randomization.
     """
@@ -91,7 +92,14 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
     group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
     if group_data is None: raise ValueError("No data")
     
-    seed_mask = get_seed_mask(mask.shape, affine, seed_coords, seed_radius)
+    if seed_file:
+         seed_mask_data, _ = load_mask(seed_file)
+         if seed_mask_data.shape != mask.shape:
+             raise ValueError("Seed file shape mismatch")
+         seed_mask = seed_mask_data > 0
+    else:
+         seed_mask = get_seed_mask(mask.shape, affine, seed_coords, seed_radius)
+         
     obs_seed_ts = load_seed_data(group_data, seed_mask, mask)
     
     print("  Generating surrogate seeds...")
@@ -148,15 +156,26 @@ def main():
          mask_data, mask_affine = load_mask(mask_file, roi_id=args.roi_id)
 
     if method == 'phaseshift':
-        if not args.condition or args.seed_x is None:
-            raise ValueError("Phaseshift requires --condition and --seed coordinates")
+        if not args.condition:
+            raise ValueError("Phaseshift requires --condition")
             
-        seed_coords = (args.seed_x, args.seed_y, args.seed_z)
+        seed_coords = None
+        seed_radius = args.seed_radius
+        
+        if args.seed_file:
+             print(f"Using seed file: {args.seed_file}")
+             seed_suffix = f"_{os.path.basename(args.seed_file).replace('.nii', '').replace('.gz', '')}"
+        elif args.seed_x is not None:
+             seed_coords = (args.seed_x, args.seed_y, args.seed_z)
+             print(f"Using seed coordinates: {seed_coords} (r={seed_radius}mm)")
+             seed_suffix = f"_seed{int(seed_coords[0])}_{int(seed_coords[1])}_{int(seed_coords[2])}_r{int(seed_radius)}"
+        else:
+             raise ValueError("Phaseshift requires --seed_file OR --seed_x/y/z")
+             
         mean_map, p_values, mask_data, mask_affine = run_phaseshift(
             args.condition, args.roi_id, seed_coords, args.seed_radius, args.n_perms, 
-            data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size
+            data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size, seed_file=args.seed_file
         )
-        seed_suffix = f"_seed{int(seed_coords[0])}_{int(seed_coords[1])}_{int(seed_coords[2])}_r{int(args.seed_radius)}"
         base_name = f"isfc_{args.condition}_{method}{seed_suffix}"
 
         

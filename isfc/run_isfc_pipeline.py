@@ -22,10 +22,11 @@ def parse_args():
     # Common Args
     parser.add_argument('--condition', type=str, required=True, help='Condition name')
     parser.add_argument('--roi_id', type=int, default=None, help='ROI ID (optional)')
-    parser.add_argument('--seed_x', type=float, required=True, help='Seed X (MNI)')
-    parser.add_argument('--seed_y', type=float, required=True, help='Seed Y (MNI)')
-    parser.add_argument('--seed_z', type=float, required=True, help='Seed Z (MNI)')
+    parser.add_argument('--seed_x', type=float, help='Seed X (MNI)')
+    parser.add_argument('--seed_y', type=float, help='Seed Y (MNI)')
+    parser.add_argument('--seed_z', type=float, help='Seed Z (MNI)')
     parser.add_argument('--seed_radius', type=float, default=5, help='Seed Radius mm')
+    parser.add_argument('--seed_file', type=str, help='Seed ROI File (.nii/.nii.gz)')
     
     # Compute Args
     parser.add_argument('--isfc_method', type=str, choices=['loo', 'pairwise'], default='loo', 
@@ -74,12 +75,22 @@ def main():
     compute_cmd = [
         python_exec, compute_script,
         "--condition", args.condition,
-        "--method", args.isfc_method,
-        "--seed_x", str(args.seed_x),
-        "--seed_y", str(args.seed_y),
-        "--seed_z", str(args.seed_z),
-        "--seed_radius", str(args.seed_radius)
+        "--method", args.isfc_method
     ] + path_args
+    
+    if args.seed_file:
+         compute_cmd.extend(["--seed_file", args.seed_file])
+    elif args.seed_x is not None:
+         compute_cmd.extend([
+            "--seed_x", str(args.seed_x),
+            "--seed_y", str(args.seed_y),
+            "--seed_z", str(args.seed_z),
+            "--seed_radius", str(args.seed_radius)
+         ])
+    else:
+         print("Error: Must provide --seed_file OR --seed_x/y/z")
+         sys.exit(1)
+
     if args.roi_id:
         compute_cmd.extend(["--roi_id", str(args.roi_id)])
         
@@ -90,7 +101,13 @@ def main():
     
     # Determine input filename from Compute step
     roi_suffix = f"_roi{args.roi_id}" if args.roi_id is not None else ""
-    seed_suffix = f"_seed{int(args.seed_x)}_{int(args.seed_y)}_{int(args.seed_z)}_r{int(args.seed_radius)}"
+    
+    if args.seed_file:
+         seed_name = f"seed-{os.path.basename(args.seed_file).replace('.nii', '').replace('.gz', '')}"
+    else:
+         seed_name = f"seed{int(args.seed_x)}_{int(args.seed_y)}_{int(args.seed_z)}_r{int(args.seed_radius)}"
+         
+    seed_suffix = f"_{seed_name}"
     base_name = f"isfc_{args.condition}_{args.isfc_method}{seed_suffix}{roi_suffix}"
     output_dir = args.output_dir
     # Use Z-score map for T-test/Bootstrap
@@ -106,13 +123,18 @@ def main():
     
     if args.stats_method == 'phaseshift':
         # Phase shift specific args
-        stats_cmd.extend([
-            "--condition", args.condition,
-            "--seed_x", str(args.seed_x),
-            "--seed_y", str(args.seed_y),
-            "--seed_z", str(args.seed_z),
-            "--seed_radius", str(args.seed_radius)
-        ])
+        stats_cmd.extend(["--condition", args.condition])
+        
+        if args.seed_file:
+             stats_cmd.extend(["--seed_file", args.seed_file])
+        else:
+             stats_cmd.extend([
+                "--seed_x", str(args.seed_x),
+                "--seed_y", str(args.seed_y),
+                "--seed_z", str(args.seed_z),
+                "--seed_radius", str(args.seed_radius)
+             ])
+             
         if args.roi_id:
             stats_cmd.extend(["--roi_id", str(args.roi_id)])
     else:

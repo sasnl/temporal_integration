@@ -18,10 +18,11 @@ def parse_args():
                         help='ISFC method: "loo" (Leave-One-Out) or "pairwise"')
     parser.add_argument('--roi_id', type=int, default=None,
                         help='Optional: ROI ID to mask (default: Whole Brain)')
-    parser.add_argument('--seed_x', type=float, required=True, help='Seed X coordinate (MNI)')
-    parser.add_argument('--seed_y', type=float, required=True, help='Seed Y coordinate (MNI)')
-    parser.add_argument('--seed_z', type=float, required=True, help='Seed Z coordinate (MNI)')
+    parser.add_argument('--seed_x', type=float, help='Seed X coordinate (MNI)')
+    parser.add_argument('--seed_y', type=float, help='Seed Y coordinate (MNI)')
+    parser.add_argument('--seed_z', type=float, help='Seed Z coordinate (MNI)')
     parser.add_argument('--seed_radius', type=float, default=5, help='Seed Radius in mm (default: 5)')
+    parser.add_argument('--seed_file', type=str, help='Path to ROI seed file (.nii/.nii.gz)')
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
@@ -111,9 +112,17 @@ def main():
     condition = args.condition
     method = args.method
     roi_id = args.roi_id
-    seed_coords = (args.seed_x, args.seed_y, args.seed_z)
-    seed_radius = args.seed_radius
     
+    # Check for mutually exclusive seed arguments
+    if args.seed_file:
+         print(f"Using seed file: {args.seed_file}")
+    elif args.seed_x is not None and args.seed_y is not None and args.seed_z is not None:
+         seed_coords = (args.seed_x, args.seed_y, args.seed_z)
+         print(f"Using seed coordinates: {seed_coords} (r={args.seed_radius}mm)")
+    else:
+         print("Error: Must provide either --seed_file OR --seed_x/y/z")
+         return
+
     data_dir = args.data_dir
     output_dir = args.output_dir
     mask_file = args.mask_file
@@ -125,7 +134,6 @@ def main():
     print(f"Condition: {condition}")
     print(f"Method: {method}")
     print(f"ROI: {roi_id if roi_id else 'Whole Mask'}")
-    print(f"Seed: {seed_coords} (r={seed_radius}mm)")
     print(f"Chunk Size: {chunk_size}")
     print(f"Data Dir: {data_dir}")
     print(f"Output Dir: {output_dir}")
@@ -148,20 +156,35 @@ def main():
     start_time = time.time()
     
     # Prepare Seed
-    seed_mask = get_seed_mask(mask.shape, affine, seed_coords, seed_radius)
+    seed_name = ""
+    if args.seed_file:
+        # Load seed file
+        seed_mask_data, seed_affine = load_mask(args.seed_file)
+        # Verify compatibility
+        if seed_mask_data.shape != mask.shape:
+             print(f"Error: Seed file shape {seed_mask_data.shape} does not match Analysis mask shape {mask.shape}")
+             return
+        
+        seed_mask = seed_mask_data > 0
+        seed_name = f"seed-{os.path.basename(args.seed_file).replace('.nii', '').replace('.gz', '')}"
+        print(f"  Loaded seed file mask with {np.sum(seed_mask)} voxels")
+        
+    else:
+        seed_coords = (args.seed_x, args.seed_y, args.seed_z)
+        seed_radius = args.seed_radius
+        seed_mask = get_seed_mask(mask.shape, affine, seed_coords, seed_radius)
+        seed_name = f"seed{int(seed_coords[0])}_{int(seed_coords[1])}_{int(seed_coords[2])}_r{int(seed_radius)}"
+    
     seed_ts = load_seed_data(group_data, seed_mask, mask) # (TR, 1, S)
     print(f"Seed timecourse loaded: {seed_ts.shape}")
     
     # Compute Raw and Z ISFC
     isfc_raw, isfc_z = run_isfc_computation(group_data, seed_ts, pairwise=pairwise, chunk_size=chunk_size)
     
-    # Fischer Z (Already computed in run_isfc_computation)
-
-    
     # Save Maps
     roi_suffix = f"_roi{roi_id}" if roi_id is not None else ""
-    seed_suffix = f"_seed{int(seed_coords[0])}_{int(seed_coords[1])}_{int(seed_coords[2])}_r{int(seed_radius)}"
-    base_name = f"isfc_{condition}_{method}{seed_suffix}{roi_suffix}"
+    # Add explicit separator for seed
+    base_name = f"isfc_{condition}_{method}_{seed_name}{roi_suffix}"
     
     raw_path = os.path.join(output_dir, f"{base_name}_desc-raw.nii.gz")
     z_path = os.path.join(output_dir, f"{base_name}_desc-zscore.nii.gz")
@@ -175,7 +198,7 @@ def main():
     # Temp save mean z for plotting
     temp_path = os.path.join(output_dir, f"temp_{base_name}.nii.gz")
     save_map(mean_z, mask, affine, temp_path)
-    save_plot(temp_path, plot_path, f"Mean ISFC (Z) {condition} {seed_coords}")
+    save_plot(temp_path, plot_path, f"Mean ISFC (Z) {condition} {seed_name}")
     os.remove(temp_path)
     
     print(f"Computation finished in {time.time() - start_time:.2f} seconds.")
