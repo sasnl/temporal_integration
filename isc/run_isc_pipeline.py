@@ -24,6 +24,12 @@ def parse_args():
                         help='P-value threshold')
     parser.add_argument('--cluster_threshold', type=int, default=0,
                         help='Cluster extent threshold (min voxels). Default: 0')
+    parser.add_argument('--use_tfce', action='store_true',
+                        help='Use Threshold-Free Cluster Enhancement (requires bootstrap/phaseshift)')
+    parser.add_argument('--tfce_E', type=float, default=0.5,
+                        help='TFCE extent parameter (default: 0.5)')
+    parser.add_argument('--tfce_H', type=float, default=2.0,
+                        help='TFCE height parameter (default: 2.0)')
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
@@ -94,6 +100,9 @@ def main():
         '--cluster_threshold', str(args.cluster_threshold),
         '--n_perms', str(args.n_perms)
     ] + path_args
+    
+    if args.use_tfce:
+        cmd_step2.extend(['--use_tfce', '--tfce_E', str(args.tfce_E), '--tfce_H', str(args.tfce_H)])
     
     if args.roi_id is not None:
         cmd_step2.extend(['--roi_id', str(args.roi_id)])

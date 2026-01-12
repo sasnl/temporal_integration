@@ -118,8 +118,12 @@ def main():
         python_exec, stats_script,
         "--method", args.stats_method,
         "--p_threshold", str(args.p_threshold),
-        "--n_perms", str(args.n_perms)
+        "--n_perms", str(args.n_perms),
+        "--cluster_threshold", str(args.cluster_threshold)
     ] + path_args
+    
+    if args.use_tfce:
+        stats_cmd.extend(["--use_tfce", "--tfce_E", str(args.tfce_E), "--tfce_H", str(args.tfce_H)])
     
     if args.stats_method == 'phaseshift':
         # Phase shift specific args

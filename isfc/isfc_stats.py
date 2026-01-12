@@ -8,7 +8,7 @@ from joblib import Parallel, delayed
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
-from pipeline_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data, apply_cluster_threshold
+from pipeline_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data, apply_cluster_threshold, apply_tfce
 from isfc_compute import run_isfc_computation 
 # Import run_isfc_computation to reuse logic for phase shift re-computation
 import config
@@ -29,6 +29,12 @@ def parse_args():
                         help='P-value threshold (default: 0.05)')
     parser.add_argument('--cluster_threshold', type=int, default=0,
                         help='Cluster extent threshold (min voxels). Default: 0')
+    parser.add_argument('--use_tfce', action='store_true',
+                        help='Use Threshold-Free Cluster Enhancement (requires permutation/bootstrap). Incompatible with cluster_threshold.')
+    parser.add_argument('--tfce_E', type=float, default=0.5,
+                        help='TFCE extent parameter (default: 0.5)')
+    parser.add_argument('--tfce_H', type=float, default=2.0,
+                        help='TFCE height parameter (default: 2.0)')
     parser.add_argument('--seed_x', type=float, help='Seed X (Required for Phase Shift)')
     parser.add_argument('--seed_y', type=float, help='Seed Y (Required for Phase Shift)')
     parser.add_argument('--seed_z', type=float, help='Seed Z (Required for Phase Shift)')
@@ -56,9 +62,26 @@ def run_ttest(data_4d):
     
     return mean_map, p_values
 
-def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42):
+def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, mask_3d=None, tfce_E=0.5, tfce_H=2.0):
     """
     Run bootstrap on 4D map (subjects dimension).
+    
+    Parameters:
+    -----------
+    data_4d : array (n_voxels, n_samples)
+        Data array
+    n_bootstraps : int
+        Number of bootstrap iterations
+    random_state : int
+        Random seed
+    use_tfce : bool
+        If True, apply TFCE transformation before computing p-values
+    mask_3d : 3D array, optional
+        Brain mask for TFCE (required if use_tfce=True)
+    tfce_E : float
+        TFCE extent parameter
+    tfce_H : float
+        TFCE height parameter
     """
     print(f"Running Bootstrap (n={n_bootstraps})...")
     n_voxels, n_samples = data_4d.shape
@@ -66,13 +89,31 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42):
     
     observed_mean = np.nanmean(data_4d, axis=1) # (V,)
     
-    data_centered = data_4d - observed_mean[:, np.newaxis]
+    if use_tfce:
+        if mask_3d is None:
+            raise ValueError("mask_3d is required when use_tfce=True")
+        # Reshape observed mean to 3D for TFCE
+        observed_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
+        observed_mean_3d[mask_3d] = observed_mean
+        observed_mean_3d = apply_tfce(observed_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
+        observed_mean = observed_mean_3d[mask_3d]
+    
+    data_centered = data_4d - np.nanmean(data_4d, axis=1, keepdims=True)
     null_means = np.zeros((n_voxels, n_bootstraps), dtype=np.float32)
     
     for i in range(n_bootstraps):
         indices = rng.randint(0, n_samples, size=n_samples)
         sample = data_centered[:, indices]
-        null_means[:, i] = np.nanmean(sample, axis=1)
+        perm_mean = np.nanmean(sample, axis=1)
+        
+        if use_tfce:
+            # Apply TFCE to permuted map
+            perm_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
+            perm_mean_3d[mask_3d] = perm_mean
+            perm_mean_3d = apply_tfce(perm_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
+            perm_mean = perm_mean_3d[mask_3d]
+        
+        null_means[:, i] = perm_mean
         
     with np.errstate(invalid='ignore'):
          p_values = np.sum(np.abs(null_means) >= np.abs(observed_mean[:, np.newaxis]), axis=1) / (n_bootstraps + 1)
@@ -80,14 +121,22 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42):
     return observed_mean, p_values
 
 
-def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE, seed_file=None):
+def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE, seed_file=None, use_tfce=False, tfce_E=0.5, tfce_H=2.0):
     """
     Run Phase Shift randomization.
+    
+    Parameters:
+    -----------
+    use_tfce : bool
+        If True, apply TFCE transformation before computing p-values
+    tfce_E : float
+        TFCE extent parameter
+    tfce_H : float
+        TFCE height parameter
     """
     print(f"Running Phase Shift (n={n_perms}, chunk_size={chunk_size})...")
     
     mask, affine = load_mask(mask_file, roi_id=roi_id)
-    # ... (loading logic unchanged) ...
     if np.sum(mask) == 0: raise ValueError("Empty mask")
     group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
     if group_data is None: raise ValueError("No data")
@@ -109,6 +158,13 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
     obs_isfc_raw, obs_isfc_z = run_isfc_computation(group_data, obs_seed_ts, pairwise=False, chunk_size=chunk_size)
     obs_mean_z = np.nanmean(obs_isfc_z, axis=1) # (V,)
     
+    if use_tfce:
+        # Apply TFCE to observed map
+        obs_mean_z_3d = np.zeros(mask.shape, dtype=np.float32)
+        obs_mean_z_3d[mask] = obs_mean_z
+        obs_mean_z_3d = apply_tfce(obs_mean_z_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
+        obs_mean_z = obs_mean_z_3d[mask]
+    
     # 2. Null Distribution
     null_means = np.zeros((obs_mean_z.shape[0], n_perms), dtype=np.float32)
     
@@ -119,14 +175,30 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
         if i % 10 == 0: print(f"  Permutation {i+1}/{n_perms}")
         
         surr_raw, surr_z = run_isfc_computation(group_data, surr_seed_ts, pairwise=False, chunk_size=chunk_size)
-        null_means[:, i] = np.nanmean(surr_z, axis=1) # Mean over subjects
+        null_mean = np.nanmean(surr_z, axis=1) # Mean over subjects
+        
+        if use_tfce:
+            # Apply TFCE to permuted map
+            null_mean_3d = np.zeros(mask.shape, dtype=np.float32)
+            null_mean_3d[mask] = null_mean
+            null_mean_3d = apply_tfce(null_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
+            null_mean = null_mean_3d[mask]
+        
+        null_means[:, i] = null_mean
         
     # P-values
     # Two-sided
     count = np.sum(np.abs(null_means) >= np.abs(obs_mean_z[:, np.newaxis]), axis=1)
     p_values = (count + 1) / (n_perms + 1)
     
-    return obs_mean_z, p_values, mask, affine
+    # Convert back to 3D for return
+    obs_mean_z_3d = np.zeros(mask.shape, dtype=np.float32)
+    obs_mean_z_3d[mask] = obs_mean_z
+    
+    p_values_3d = np.ones(mask.shape, dtype=np.float32)
+    p_values_3d[mask] = p_values
+    
+    return obs_mean_z_3d, p_values_3d, mask, affine
 
 def main():
     args = parse_args()
@@ -174,7 +246,8 @@ def main():
              
         mean_map, p_values, mask_data, mask_affine = run_phaseshift(
             args.condition, args.roi_id, seed_coords, args.seed_radius, args.n_perms, 
-            data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size, seed_file=args.seed_file
+            data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size, seed_file=args.seed_file,
+            use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H
         )
         base_name = f"isfc_{args.condition}_{method}{seed_suffix}"
 
@@ -202,9 +275,15 @@ def main():
         masked_data = data_4d[mask_data] # (V, S)
         
         if method == 'ttest':
+            if args.use_tfce:
+                print("Warning: TFCE requires permutation/bootstrap. T-test does not support TFCE. Ignoring --use_tfce.")
             mean_vals, p_vals_vec = run_ttest(masked_data)
         elif method == 'bootstrap':
-            mean_vals, p_vals_vec = run_bootstrap(masked_data, n_bootstraps=args.n_perms)
+            mean_vals, p_vals_vec = run_bootstrap(
+                masked_data, n_bootstraps=args.n_perms,
+                use_tfce=args.use_tfce, mask_3d=mask_data,
+                tfce_E=args.tfce_E, tfce_H=args.tfce_H
+            )
             
         # Reconstruct maps
         mean_map = np.zeros(mask_data.shape, dtype=np.float32)
@@ -215,6 +294,16 @@ def main():
         
         input_base = os.path.basename(args.input_map).replace('.nii.gz', '').replace('_desc-zscore', '').replace('_desc-raw', '')
         base_name = f"{input_base}_{method}"
+    
+    # TFCE suffix
+    tfce_suffix = "_tfce" if args.use_tfce else ""
+    if tfce_suffix:
+        base_name += tfce_suffix
+    
+    # Check incompatibility
+    if args.use_tfce and args.cluster_threshold > 0:
+        print("Warning: TFCE and cluster_threshold are incompatible. Ignoring cluster_threshold.")
+        args.cluster_threshold = 0
 
     # Save Outputs
     if not os.path.exists(output_dir): os.makedirs(output_dir)
@@ -226,7 +315,6 @@ def main():
     # 2. Significant Map
     sig_map = mean_map.copy()
     sig_map[p_values >= threshold] = 0
-    # Also mask out 0s if they were 0 originally
     
     if args.cluster_threshold > 0:
         sig_map = apply_cluster_threshold(sig_map, args.cluster_threshold)

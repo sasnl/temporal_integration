@@ -349,3 +349,128 @@ def apply_cluster_threshold(img_data, cluster_size):
     print(f"  Removed {num_features - n_kept} small clusters. Kept {n_kept}.")
     
     return cleaned_data
+
+def apply_tfce(img_data, mask, E=0.5, H=2, dh=0.1, two_sided=True):
+    """
+    Apply Threshold-Free Cluster Enhancement (TFCE) to a statistical map.
+    
+    TFCE enhances both signal intensity and spatial extent without requiring
+    arbitrary cluster-forming thresholds. It integrates over all possible
+    thresholds to create an enhanced statistic map.
+    
+    Parameters:
+    -----------
+    img_data : 3D numpy array
+        Statistical map (e.g., t-values, z-scores). Should be 3D (X, Y, Z).
+    mask : 3D boolean numpy array
+        Brain mask indicating valid voxels. Same shape as img_data.
+    E : float, optional (default=0.5)
+        Extent parameter. Controls weight given to cluster size.
+    H : float, optional (default=2)
+        Height parameter. Controls weight given to statistical height.
+    dh : float, optional (default=0.1)
+        Step size for threshold integration. Smaller = more accurate but slower.
+    two_sided : bool, optional (default=True)
+        If True, process positive and negative values separately and combine.
+        If False, only process positive values.
+    
+    Returns:
+    --------
+    tfce_map : 3D numpy array
+        TFCE-enhanced statistical map. Same shape as img_data.
+    
+    References:
+    -----------
+    Smith & Nichols (2009). Threshold-free cluster enhancement: 
+    addressing problems of smoothing, threshold dependence and 
+    localisation in cluster inference. NeuroImage, 44(1), 83-98.
+    """
+    print(f"Applying TFCE (E={E}, H={H}, dh={dh}, two_sided={two_sided})...")
+    
+    # Initialize output
+    tfce_map = np.zeros_like(img_data, dtype=np.float32)
+    
+    # Mask the data
+    masked_data = img_data.copy()
+    masked_data[~mask] = 0
+    
+    if two_sided:
+        # Process positive and negative values separately
+        # Positive values
+        pos_data = np.maximum(masked_data, 0)
+        if np.any(pos_data > 0):
+            tfce_pos = _compute_tfce_single_direction(pos_data, mask, E, H, dh, direction='positive')
+            tfce_map += tfce_pos
+        
+        # Negative values (take absolute value, then negate result)
+        neg_data = np.maximum(-masked_data, 0)
+        if np.any(neg_data > 0):
+            tfce_neg = _compute_tfce_single_direction(neg_data, mask, E, H, dh, direction='positive')
+            tfce_map -= tfce_neg  # Negate because these were negative values
+    else:
+        # Only process positive values
+        pos_data = np.maximum(masked_data, 0)
+        if np.any(pos_data > 0):
+            tfce_map = _compute_tfce_single_direction(pos_data, mask, E, H, dh, direction='positive')
+    
+    print(f"  TFCE complete. Range: [{np.nanmin(tfce_map[mask]):.3f}, {np.nanmax(tfce_map[mask]):.3f}]")
+    
+    return tfce_map
+
+def _compute_tfce_single_direction(data, mask, E, H, dh, direction='positive'):
+    """
+    Compute TFCE for a single direction (positive values only).
+    
+    This is a helper function that does the actual TFCE computation.
+    """
+    tfce_map = np.zeros_like(data, dtype=np.float32)
+    
+    # Get valid (non-zero) values within mask
+    valid_voxels = (data > 0) & mask
+    if not np.any(valid_voxels):
+        return tfce_map
+    
+    # Get range of values to threshold over
+    min_val = np.min(data[valid_voxels])
+    max_val = np.max(data[valid_voxels])
+    
+    if min_val >= max_val:
+        return tfce_map
+    
+    # Create threshold levels
+    # Start slightly above min to avoid numerical issues
+    thresholds = np.arange(min_val + dh, max_val + dh, dh)
+    
+    if len(thresholds) == 0:
+        return tfce_map
+    
+    # Process each threshold level
+    for h in thresholds:
+        # Threshold: keep voxels above current threshold
+        thresholded = data >= h
+        thresholded = thresholded & mask  # Ensure within mask
+        
+        if not np.any(thresholded):
+            continue
+        
+        # Find connected clusters at this threshold
+        labeled_array, num_clusters = label(thresholded)
+        
+        if num_clusters == 0:
+            continue
+        
+        # Calculate cluster sizes
+        cluster_sizes = np.bincount(labeled_array.ravel())
+        
+        # For each cluster, add contribution to TFCE map
+        for cluster_id in range(1, num_clusters + 1):
+            cluster_mask = (labeled_array == cluster_id)
+            cluster_size = cluster_sizes[cluster_id]
+            
+            # TFCE contribution: (cluster_size^E) * (threshold^H) * dh
+            contribution = (cluster_size ** E) * (h ** H) * dh
+            
+            # Add contribution to all voxels in this cluster
+            tfce_map[cluster_mask] += contribution
+    
+    return tfce_map
