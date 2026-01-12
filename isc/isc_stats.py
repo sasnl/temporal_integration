@@ -9,7 +9,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
 import config
-from pipeline_utils import load_mask, load_data, save_map, save_plot, run_isc_computation, apply_cluster_threshold
+from pipeline_utils import load_mask, load_data, save_map, save_plot, run_isc_computation, apply_cluster_threshold, apply_tfce
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Step 2: Statistical Analysis for ISC')
@@ -27,6 +27,12 @@ def parse_args():
                         help='P-value threshold (default: 0.05)')
     parser.add_argument('--cluster_threshold', type=int, default=0,
                         help='Cluster extent threshold (min voxels). Default: 0 (no threshold)')
+    parser.add_argument('--use_tfce', action='store_true',
+                        help='Use Threshold-Free Cluster Enhancement (requires permutation/bootstrap). Incompatible with cluster_threshold.')
+    parser.add_argument('--tfce_E', type=float, default=0.5,
+                        help='TFCE extent parameter (default: 0.5)')
+    parser.add_argument('--tfce_H', type=float, default=2.0,
+                        help='TFCE height parameter (default: 2.0)')
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
@@ -50,9 +56,26 @@ def run_ttest(data_4d):
     mean_map = np.nanmean(data_4d, axis=-1)
     return mean_map, p_values
 
-def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42):
+def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, mask_3d=None, tfce_E=0.5, tfce_H=2.0):
     """
     Run bootstrap on 4D map (subjects dimension).
+    
+    Parameters:
+    -----------
+    data_4d : array (n_voxels, n_samples)
+        Data array
+    n_bootstraps : int
+        Number of bootstrap iterations
+    random_state : int
+        Random seed
+    use_tfce : bool
+        If True, apply TFCE transformation before computing p-values
+    mask_3d : 3D array, optional
+        Brain mask for TFCE (required if use_tfce=True)
+    tfce_E : float
+        TFCE extent parameter
+    tfce_H : float
+        TFCE height parameter
     """
     print(f"Running Bootstrap (n={n_bootstraps})...")
     n_voxels, n_samples = data_4d.shape
@@ -61,11 +84,20 @@ def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42):
     # Observed mean
     observed_mean = np.nanmean(data_4d, axis=1)
     
+    if use_tfce:
+        if mask_3d is None:
+            raise ValueError("mask_3d is required when use_tfce=True")
+        # Reshape observed mean to 3D for TFCE
+        observed_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
+        observed_mean_3d[mask_3d] = observed_mean
+        observed_mean_3d = apply_tfce(observed_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
+        observed_mean = observed_mean_3d[mask_3d]
+    
     # Center data per voxel
     # For NaNs: if voxel has NaNs, mean is computed from valid subjects.
     # We center valid subjects by subtracting the observed (nan)mean.
     # NaNs remain NaNs.
-    data_centered = data_4d - observed_mean[:, np.newaxis]
+    data_centered = data_4d - np.nanmean(data_4d, axis=1, keepdims=True)
     
     null_means = np.zeros((n_voxels, n_bootstraps), dtype=np.float32)
     
@@ -73,25 +105,37 @@ def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42):
         # Resample indices with replacement
         indices = rng.randint(0, n_samples, size=n_samples)
         sample = data_centered[:, indices]
-        null_means[:, i] = np.nanmean(sample, axis=1)
+        perm_mean = np.nanmean(sample, axis=1)
         
-    # P-value: Proportion of null means >= observed mean
-    # NaNs in null_means or observed_mean will result in False for comparison, or warning.
-    # We should handle this validly.
+        if use_tfce:
+            # Apply TFCE to permuted map
+            perm_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
+            perm_mean_3d[mask_3d] = perm_mean
+            perm_mean_3d = apply_tfce(perm_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
+            perm_mean = perm_mean_3d[mask_3d]
+        
+        null_means[:, i] = perm_mean
+        
+    # P-value: Proportion of null means >= observed mean (two-sided: use absolute values)
     with np.errstate(invalid='ignore'):
-         p_values = np.sum(null_means >= observed_mean[:, np.newaxis], axis=1) / n_bootstraps
-    
-    # Two-sided correction if needed, but usually ISC is one-sided (>0). 
-    # If we want two-sided: p = 2 * min(p_one_sided, 1 - p_one_sided)
-    # Let's stick to one-sided > 0 for standard ISC.
+         p_values = np.sum(np.abs(null_means) >= np.abs(observed_mean[:, np.newaxis]), axis=1) / (n_bootstraps + 1)
     
     return observed_mean, p_values
 
 
 
-def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE):
+def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE, use_tfce=False, tfce_E=0.5, tfce_H=2.0):
     """
     Run Phase Shift randomization.
+    
+    Parameters:
+    -----------
+    use_tfce : bool
+        If True, apply TFCE transformation before computing p-values
+    tfce_E : float
+        TFCE extent parameter
+    tfce_H : float
+        TFCE height parameter
     """
     print(f"Running Phase Shift (n={n_perms}, chunk_size={chunk_size})...")
     
@@ -107,18 +151,15 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=c
     obs_raw, obs_z = run_isc_computation(group_data, chunk_size=chunk_size)
     obs_mean = np.nanmean(obs_z, axis=1) # (V,)
     
+    if use_tfce:
+        # Apply TFCE to observed map
+        obs_mean_3d = np.zeros(mask.shape, dtype=np.float32)
+        obs_mean_3d[mask] = obs_mean
+        obs_mean_3d = apply_tfce(obs_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
+        obs_mean = obs_mean_3d[mask]
+    
     # 2. Phase Randomization
-    # ...
-    
-    # Optimization: To avoid re-computing full ISC n_perms times, 
-    # usually we can do it more efficiently? 
-    # BrainIAK phase_randomize randomizes the time series.
-    # Then we run ISC.
-    
     count_greater = np.zeros(n_voxels, dtype=int)
-    
-    # Parallelizing permutations is expensive if we copy memory.
-    # Better to run loop or small batches.
     
     rng = np.random.RandomState(42)
     
@@ -134,11 +175,25 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=c
         null_raw, null_z = run_isc_computation(shifted_data, chunk_size=chunk_size)
         null_mean = np.nanmean(null_z, axis=1)
         
+        if use_tfce:
+            # Apply TFCE to permuted map
+            null_mean_3d = np.zeros(mask.shape, dtype=np.float32)
+            null_mean_3d[mask] = null_mean
+            null_mean_3d = apply_tfce(null_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
+            null_mean = null_mean_3d[mask]
+        
         count_greater += (np.abs(null_mean) >= np.abs(obs_mean))
         
     p_values = (count_greater + 1) / (n_perms + 1)
     
-    return obs_mean, p_values, mask, affine 
+    # Convert back to 3D for return
+    obs_mean_3d = np.zeros(mask.shape, dtype=np.float32)
+    obs_mean_3d[mask] = obs_mean
+    
+    p_values_3d = np.ones(mask.shape, dtype=np.float32)
+    p_values_3d[mask] = p_values
+    
+    return obs_mean_3d, p_values_3d, mask, affine 
 
 def main():
     args = parse_args()
@@ -170,7 +225,8 @@ def main():
         # Phase shift loads its own data/mask inside the function to ensure compatibility
         mean_map, p_values, mask_data, mask_affine = run_phaseshift(
             args.condition, roi_id, args.n_perms, 
-            data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size
+            data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size,
+            use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H
         )
         
         # Base name for output
@@ -207,9 +263,22 @@ def main():
         masked_data = data_4d[mask_data] # Result shape: (n_voxels_in_mask, n_samples)
         
         if method == 'ttest':
-            mean_map, p_values = run_ttest(masked_data)
+            if args.use_tfce:
+                print("Warning: TFCE requires permutation/bootstrap. T-test does not support TFCE. Ignoring --use_tfce.")
+            mean_vals, p_values = run_ttest(masked_data)
         elif method == 'bootstrap':
-            mean_map, p_values = run_bootstrap_manual(masked_data, n_bootstraps=args.n_perms)
+            mean_vals, p_values = run_bootstrap_manual(
+                masked_data, n_bootstraps=args.n_perms, 
+                use_tfce=args.use_tfce, mask_3d=mask_data, 
+                tfce_E=args.tfce_E, tfce_H=args.tfce_H
+            )
+        
+        # Reconstruct 3D maps
+        mean_map = np.zeros(mask_data.shape, dtype=np.float32)
+        mean_map[mask_data] = mean_vals
+        
+        p_values_3d = np.ones(mask_data.shape, dtype=np.float32)
+        p_values_3d[mask_data] = p_values
             
         # Extract filename base
         input_base = os.path.basename(args.input_map).replace('.nii.gz', '').replace('_desc-zscore', '').replace('_desc-raw', '')
@@ -219,19 +288,27 @@ def main():
     roi_suffix = f"_roi{roi_id}" if roi_id is not None else ""
     if roi_suffix not in base_name: # Avoid double suffix if it was in input name
         base_name += roi_suffix
+    
+    # TFCE suffix
+    tfce_suffix = "_tfce" if args.use_tfce else ""
+    if tfce_suffix:
+        base_name += tfce_suffix
+    
+    # Check incompatibility
+    if args.use_tfce and args.cluster_threshold > 0:
+        print("Warning: TFCE and cluster_threshold are incompatible. Ignoring cluster_threshold.")
+        args.cluster_threshold = 0
         
     # Save Outputs
     # 1. P-value map
     p_path = os.path.join(output_dir, f"{base_name}_desc-pvalues.nii.gz")
-    save_map(p_values, mask_data, mask_affine, p_path)
+    save_map(p_values_3d, mask_data, mask_affine, p_path)
     
     # 2. Thresholded Map (Significant Only)
-    sig_indices = p_values < threshold
-    sig_map = np.zeros_like(mean_map)
-    sig_map[sig_indices] = mean_map[sig_indices]
+    sig_map = mean_map.copy()
+    sig_map[p_values_3d >= threshold] = 0
     
-    
-    # Apply cluster threshold if requested
+    # Apply cluster threshold if requested (and not using TFCE)
     if args.cluster_threshold > 0:
         sig_map = apply_cluster_threshold(sig_map, args.cluster_threshold)
         
