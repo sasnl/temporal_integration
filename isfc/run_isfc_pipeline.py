@@ -37,6 +37,14 @@ def parse_args():
                         help='Statistical Method')
     parser.add_argument('--n_perms', type=int, default=1000, help='Number of permutations/bootstraps')
     parser.add_argument('--p_threshold', type=float, default=0.05, help='P-value threshold')
+    parser.add_argument('--cluster_threshold', type=int, default=0,
+                        help='Cluster extent threshold (min voxels). Default: 0')
+    parser.add_argument('--use_tfce', action='store_true',
+                        help='Use Threshold-Free Cluster Enhancement (requires bootstrap/phaseshift)')
+    parser.add_argument('--tfce_E', type=float, default=0.5,
+                        help='TFCE extent parameter (default: 0.5)')
+    parser.add_argument('--tfce_H', type=float, default=2.0,
+                        help='TFCE height parameter (default: 2.0)')
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
