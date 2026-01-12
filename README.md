@@ -62,7 +62,7 @@ python isc/run_isc_pipeline.py --condition TI1_orig --isc_method loo --stats_met
 - `--isc_method`: `loo` (Leave-One-Out) or `pairwise`.
 - `--stats_method`: `ttest`, `bootstrap`, or `phaseshift`.
 - `--roi_id` (Optional): Run analysis within a specific ROI (using Atlas ID).
-- `--threshold`: P-value threshold (default: 0.05).
+- `--p_threshold`: P-value threshold (default: 0.05).
 
 **Path Arguments (Optional overrides):**
 - `--data_dir`: Path to input data directory (overrides `config.py`).

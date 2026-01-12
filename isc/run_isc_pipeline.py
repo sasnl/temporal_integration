@@ -20,7 +20,7 @@ def parse_args():
                         help='Optional: ROI ID')
     parser.add_argument('--n_perms', type=int, default=1000,
                         help='Number of permutations/bootstraps')
-    parser.add_argument('--threshold', type=float, default=0.05,
+    parser.add_argument('--p_threshold', type=float, default=0.05,
                         help='P-value threshold')
     parser.add_argument('--cluster_threshold', type=int, default=0,
                         help='Cluster extent threshold (min voxels). Default: 0')
@@ -90,7 +90,7 @@ def main():
     cmd_step2 = [
         python_exec, stats_script,
         '--method', args.stats_method,
-        '--threshold', str(args.threshold),
+        '--p_threshold', str(args.p_threshold),
         '--cluster_threshold', str(args.cluster_threshold),
         '--n_perms', str(args.n_perms)
     ] + path_args
