@@ -36,7 +36,7 @@ def parse_args():
     parser.add_argument('--stats_method', type=str, choices=['ttest', 'bootstrap', 'phaseshift'], required=True,
                         help='Statistical Method')
     parser.add_argument('--n_perms', type=int, default=1000, help='Number of permutations/bootstraps')
-    parser.add_argument('--threshold', type=float, default=0.05, help='P-value threshold')
+    parser.add_argument('--p_threshold', type=float, default=0.05, help='P-value threshold')
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
@@ -117,7 +117,7 @@ def main():
     stats_cmd = [
         python_exec, stats_script,
         "--method", args.stats_method,
-        "--threshold", str(args.threshold),
+        "--p_threshold", str(args.p_threshold),
         "--n_perms", str(args.n_perms)
     ] + path_args
     

@@ -23,7 +23,7 @@ def parse_args():
                         help='Number of permutations/bootstraps (default: 1000)')
     parser.add_argument('--roi_id', type=int, default=None,
                         help='Optional: ROI ID to mask (default: Whole Brain)')
-    parser.add_argument('--threshold', type=float, default=0.05,
+    parser.add_argument('--p_threshold', type=float, default=0.05,
                         help='P-value threshold (default: 0.05)')
     parser.add_argument('--cluster_threshold', type=int, default=0,
                         help='Cluster extent threshold (min voxels). Default: 0 (no threshold)')
@@ -144,7 +144,7 @@ def main():
     args = parse_args()
     method = args.method
     roi_id = args.roi_id
-    threshold = args.threshold
+    threshold = args.p_threshold
     output_dir = args.output_dir
     data_dir = args.data_dir
     mask_file = args.mask_file

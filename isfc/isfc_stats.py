@@ -25,7 +25,7 @@ def parse_args():
                         help='ROI ID (if using Phase Shift or masking input map)')
     parser.add_argument('--n_perms', type=int, default=1000,
                         help='Number of permutations/bootstraps (default: 1000)')
-    parser.add_argument('--threshold', type=float, default=0.05,
+    parser.add_argument('--p_threshold', type=float, default=0.05,
                         help='P-value threshold (default: 0.05)')
     parser.add_argument('--cluster_threshold', type=int, default=0,
                         help='Cluster extent threshold (min voxels). Default: 0')
@@ -44,8 +44,6 @@ def parse_args():
                         help=f'Path to mask file (default: {config.MASK_FILE})')
     parser.add_argument('--chunk_size', type=int, default=config.CHUNK_SIZE,
                         help=f'Chunk size (default: {config.CHUNK_SIZE})')
-    return parser.parse_args()
-
     return parser.parse_args()
 
 def run_ttest(data_4d):
@@ -134,7 +132,7 @@ def main():
     args = parse_args()
     method = args.method
     roi_id = args.roi_id
-    threshold = args.threshold
+    threshold = args.p_threshold
     output_dir = args.output_dir
     data_dir = args.data_dir
     mask_file = args.mask_file
