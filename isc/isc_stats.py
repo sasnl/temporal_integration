@@ -4,7 +4,7 @@ import numpy as np
 import time
 import nibabel as nib
 from scipy.stats import ttest_1samp
-from brainiak.utils.utils import phase_randomize
+from brainiak.isc import phaseshift_isc
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
@@ -126,7 +126,7 @@ def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42, use_tfce=F
 
 def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE, use_tfce=False, tfce_E=0.5, tfce_H=2.0):
     """
-    Run Phase Shift randomization.
+    Run Phase Shift randomization using brainiak's optimized phaseshift_isc function.
     
     Parameters:
     -----------
@@ -137,7 +137,7 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=c
     tfce_H : float
         TFCE height parameter
     """
-    print(f"Running Phase Shift (n={n_perms}, chunk_size={chunk_size})...")
+    print(f"Running Phase Shift (n={n_perms}) using brainiak.isc.phaseshift_isc...")
     
     mask, affine = load_mask(mask_file, roi_id=roi_id)
     if np.sum(mask) == 0: raise ValueError("Empty mask")
@@ -147,44 +147,49 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=c
     
     n_trs, n_voxels, n_subs = group_data.shape
     
-    # 1. Compute Observed ISC
-    obs_raw, obs_z = run_isc_computation(group_data, chunk_size=chunk_size)
-    obs_mean = np.nanmean(obs_z, axis=1) # (V,)
+    # Use brainiak's optimized phaseshift_isc function
+    # This handles phase randomization and ISC computation efficiently
+    print(f"Computing phase-shifted ISC with {n_perms} permutations...")
+    observed, p_values, distribution = phaseshift_isc(
+        group_data,
+        pairwise=False,
+        summary_statistic='median',
+        n_shifts=n_perms,
+        side='right',
+        tolerate_nans=True,
+        random_state=42
+    )
     
+    # observed shape: (n_voxels,)
+    # p_values shape: (n_voxels,)
+    # distribution shape: (n_shifts, n_voxels)
+    
+    obs_mean = observed  # Already the summary statistic (median)
+    
+    # Handle TFCE if requested
     if use_tfce:
+        print("Applying TFCE to observed ISC map...")
         # Apply TFCE to observed map
         obs_mean_3d = np.zeros(mask.shape, dtype=np.float32)
         obs_mean_3d[mask] = obs_mean
         obs_mean_3d = apply_tfce(obs_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
         obs_mean = obs_mean_3d[mask]
-    
-    # 2. Phase Randomization
-    count_greater = np.zeros(n_voxels, dtype=int)
-    
-    rng = np.random.RandomState(42)
-    
-    for i in range(n_perms):
-        if i % 10 == 0: print(f"  Permutation {i}/{n_perms}")
         
-        # Shift each subject
-        shifted_data = np.zeros_like(group_data)
-        for s in range(n_subs):
-            shifted_data[:, :, s] = phase_randomize(group_data[:, :, s], random_state=rng)
-            
-        # Compute Null ISC
-        null_raw, null_z = run_isc_computation(shifted_data, chunk_size=chunk_size)
-        null_mean = np.nanmean(null_z, axis=1)
+        # Apply TFCE to null distribution and recompute p-values
+        print("Applying TFCE to null distribution...")
+        null_distribution_tfce = np.zeros_like(distribution, dtype=np.float32)
+        for i in range(n_perms):
+            if (i + 1) % 100 == 0:
+                print(f"  TFCE permutation {i+1}/{n_perms}")
+            null_map_3d = np.zeros(mask.shape, dtype=np.float32)
+            null_map_3d[mask] = distribution[i, :]
+            null_map_3d = apply_tfce(null_map_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
+            null_distribution_tfce[i, :] = null_map_3d[mask]
         
-        if use_tfce:
-            # Apply TFCE to permuted map
-            null_mean_3d = np.zeros(mask.shape, dtype=np.float32)
-            null_mean_3d[mask] = null_mean
-            null_mean_3d = apply_tfce(null_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
-            null_mean = null_mean_3d[mask]
-        
-        count_greater += (np.abs(null_mean) >= np.abs(obs_mean))
-        
-    p_values = (count_greater + 1) / (n_perms + 1)
+        # Recompute p-values with TFCE-transformed data
+        with np.errstate(invalid='ignore'):
+            count_greater = np.sum(np.abs(null_distribution_tfce) >= np.abs(obs_mean[:, np.newaxis]), axis=0)
+        p_values = (count_greater + 1) / (n_perms + 1)
     
     # Convert back to 3D for return
     obs_mean_3d = np.zeros(mask.shape, dtype=np.float32)
