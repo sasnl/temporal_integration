@@ -1,0 +1,3 @@
+--condition TI1_orig --seed_x 45 --seed_y -30 --seed_z 10 --seed_radius 5 --stats_method phaseshift --n_perms 1000
+--condition TI1_sent --seed_x 45 --seed_y -30 --seed_z 10 --seed_radius 5 --stats_method phaseshift --n_perms 1000
+--condition TI1_word --seed_x 45 --seed_y -30 --seed_z 10 --seed_radius 5 --stats_method phaseshift --n_perms 1000

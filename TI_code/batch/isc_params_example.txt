@@ -1,0 +1,3 @@
+TI1_orig,loo,phaseshift,1000
+TI1_sent,loo,phaseshift,1000
+TI1_word,loo,phaseshift,1000
