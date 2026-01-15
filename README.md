@@ -2,7 +2,8 @@
 
 This repository contains the analysis code for the Temporal Integration project, focusing on Inter-Subject Correlation (ISC) and Inter-Subject Functional Correlation (ISFC) using the [BrainIAK](https://brainiak.org/) library.
 
-The pipeline is designed to be modular, separating computation (Step 1) from statistical analysis (Step 2), and supports High Performance Computing (HPC) usage via parallel processing.
+
+The pipeline is designed to be modular, separating computation (Step 1) from statistical analysis (Step 2). It supports High Performance Computing (HPC) usage via parallel processing for both data computation and permutation testing.
 
 ## Project Structure
 
@@ -67,6 +68,7 @@ python isc/run_isc_pipeline.py --condition TI1_orig --isc_method loo --stats_met
 - `--use_tfce`: Use Threshold-Free Cluster Enhancement (TFCE). Requires `bootstrap` or `phaseshift`.
 - `--tfce_E`, `--tfce_H`: TFCE parameters (default: E=0.5, H=2.0).
 > **Note**: TFCE and Cluster Threshold are mutually exclusive. TFCE is not available for T-tests.
+> **Correction**: When TFCE is used, p-values are automatically FWER-corrected (Family-Wise Error Rate) using the Max-Statistic method.
 
 **Path Arguments (Optional overrides):**
 - `--data_dir`: Path to input data directory (overrides `config.py`).
@@ -92,6 +94,7 @@ python isfc/run_isfc_pipeline.py --condition TI1_orig --stats_method phaseshift 
 - `--cluster_threshold`: Minimum cluster size (voxels).
 - `--use_tfce`: Use TFCE (requires `bootstrap` or `phaseshift`).
 - `--tfce_E`, `--tfce_H`: TFCE parameters.
+> **Note**: TFCE uses FWER correction (Max-Statistic).
 
 **Path Arguments:**
 - `--data_dir`, `--output_dir`, `--mask_file`: Override `config.py` defaults.
