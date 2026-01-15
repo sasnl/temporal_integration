@@ -63,6 +63,10 @@ python isc/run_isc_pipeline.py --condition TI1_orig --isc_method loo --stats_met
 - `--stats_method`: `ttest`, `bootstrap`, or `phaseshift`.
 - `--roi_id` (Optional): Run analysis within a specific ROI (using Atlas ID).
 - `--p_threshold`: P-value threshold (default: 0.05).
+- `--cluster_threshold`: Minimum cluster size (voxels) for significance thresholding (default: 0).
+- `--use_tfce`: Use Threshold-Free Cluster Enhancement (TFCE). Requires `bootstrap` or `phaseshift`.
+- `--tfce_E`, `--tfce_H`: TFCE parameters (default: E=0.5, H=2.0).
+> **Note**: TFCE and Cluster Threshold are mutually exclusive. TFCE is not available for T-tests.
 
 **Path Arguments (Optional overrides):**
 - `--data_dir`: Path to input data directory (overrides `config.py`).
@@ -85,6 +89,9 @@ python isfc/run_isfc_pipeline.py --condition TI1_orig --stats_method phaseshift 
 - `--seed_radius`: Radius of the seed sphere in mm (default: 5).
 - `--stats_method`: `ttest`, `bootstrap`, or `phaseshift`.
 - `--isfc_method`: `loo` or `pairwise`.
+- `--cluster_threshold`: Minimum cluster size (voxels).
+- `--use_tfce`: Use TFCE (requires `bootstrap` or `phaseshift`).
+- `--tfce_E`, `--tfce_H`: TFCE parameters.
 
 **Path Arguments:**
 - `--data_dir`, `--output_dir`, `--mask_file`: Override `config.py` defaults.
