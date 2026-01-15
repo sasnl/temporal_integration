@@ -10,6 +10,46 @@ import os
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
 import config
 from pipeline_utils import load_mask, load_data, save_map, save_plot, run_isc_computation, apply_cluster_threshold, apply_tfce
+from joblib import Parallel, delayed
+
+def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, seed):
+    rng = np.random.RandomState(seed)
+    indices = rng.randint(0, n_samples, size=n_samples)
+    sample = data_centered[:, indices]
+    perm_mean = np.nanmean(sample, axis=1)
+    
+    if use_tfce:
+        # Apply TFCE to permuted map
+        perm_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
+        perm_mean_3d[mask_3d] = perm_mean
+        perm_mean_3d = apply_tfce(perm_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
+        # Return Max-Statistic for FWER correction
+        return np.max(np.abs(perm_mean_3d))
+    else:
+        return perm_mean
+
+def _run_phaseshift_iter(i, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
+    n_subs = group_data.shape[2]
+    rng = np.random.RandomState(seed)
+    
+    # Shift each subject
+    shifted_data = np.zeros_like(group_data)
+    for s in range(n_subs):
+        shifted_data[:, :, s] = phase_randomize(group_data[:, :, s], random_state=rng)
+        
+    # Compute Null ISC
+    null_raw, null_z = run_isc_computation(shifted_data, chunk_size=chunk_size)
+    null_mean = np.nanmean(null_z, axis=1)
+    
+    if use_tfce:
+        # FWER Correction: Return max statistic
+        null_mean_3d = np.zeros(mask.shape, dtype=np.float32)
+        null_mean_3d[mask] = null_mean
+        null_mean_3d = apply_tfce(null_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
+        return np.max(np.abs(null_mean_3d))
+    else:
+        return null_mean
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Step 2: Statistical Analysis for ISC')
@@ -79,7 +119,6 @@ def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42, use_tfce=F
     """
     print(f"Running Bootstrap (n={n_bootstraps})...")
     n_voxels, n_samples = data_4d.shape
-    rng = np.random.RandomState(random_state)
     
     # Observed mean
     observed_mean = np.nanmean(data_4d, axis=1)
@@ -93,32 +132,44 @@ def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42, use_tfce=F
         observed_mean_3d = apply_tfce(observed_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
         observed_mean = observed_mean_3d[mask_3d]
     
-    # Center data per voxel
-    # For NaNs: if voxel has NaNs, mean is computed from valid subjects.
-    # We center valid subjects by subtracting the observed (nan)mean.
-    # NaNs remain NaNs.
+    # Center data
     data_centered = data_4d - np.nanmean(data_4d, axis=1, keepdims=True)
     
-    null_means = np.zeros((n_voxels, n_bootstraps), dtype=np.float32)
+    # Parallelize
+    results = Parallel(n_jobs=-1, verbose=5)(
+        delayed(_run_bootstrap_iter)(
+            i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, random_state + i
+        ) for i in range(n_bootstraps)
+    )
     
-    for i in range(n_bootstraps):
-        # Resample indices with replacement
-        indices = rng.randint(0, n_samples, size=n_samples)
-        sample = data_centered[:, indices]
-        perm_mean = np.nanmean(sample, axis=1)
+    if use_tfce:
+        # Results are list of max-stats (one per bootstrap)
+        null_max_stats = np.array(results) # (n_bootstraps,)
+        # FWER P-value: Proportion of null_max >= observed_val[voxel]
+        # Compare each voxel's observed val against the ONE null distribution of max stats
+        # Broadcasting: observed_mean[:, None] (V, 1) vs null_max_stats[None, :] (1, B)
+        # But actually simpler: we just need counts.
+        # sort null_max_stats for faster lookup? Or just broadcast.
         
-        if use_tfce:
-            # Apply TFCE to permuted map
-            perm_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
-            perm_mean_3d[mask_3d] = perm_mean
-            perm_mean_3d = apply_tfce(perm_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
-            perm_mean = perm_mean_3d[mask_3d]
+        # P = (sum(null_max >= obs_val) + 1) / (B + 1)
+        # using broadcasting
+        with np.errstate(invalid='ignore'):
+            # observed_mean is (V,), null_max_stats is (B,)
+            # We want for each voxel, how many null_max are >= abs(obs[v])
+            # This can be memory intensive if V and B are large.
+            # (V, B) bool array.
+            # If V=200k, B=1000, that's 200MB bool array. Totally fine.
+            p_values = np.mean(null_max_stats[np.newaxis, :] >= np.abs(observed_mean[:, np.newaxis]), axis=1)
+            # Add +1 correction logic if desired, or simpler mean. 
+            # (Sum + 1) / (N + 1)
+            p_values = (np.sum(null_max_stats[np.newaxis, :] >= np.abs(observed_mean[:, np.newaxis]), axis=1) + 1) / (n_bootstraps + 1)
+            
+    else:
+        # Results are list of arrays (n_voxels,)
+        null_means = np.array(results).T # (n_voxels, n_bootstraps)
         
-        null_means[:, i] = perm_mean
-        
-    # P-value: Proportion of null means >= observed mean (two-sided: use absolute values)
-    with np.errstate(invalid='ignore'):
-         p_values = np.sum(np.abs(null_means) >= np.abs(observed_mean[:, np.newaxis]), axis=1) / (n_bootstraps + 1)
+        with np.errstate(invalid='ignore'):
+             p_values = np.sum(np.abs(null_means) >= np.abs(observed_mean[:, np.newaxis]), axis=1) / (n_bootstraps + 1)
     
     return observed_mean, p_values
 
@@ -158,33 +209,21 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=c
         obs_mean_3d = apply_tfce(obs_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
         obs_mean = obs_mean_3d[mask]
     
-    # 2. Phase Randomization
-    count_greater = np.zeros(n_voxels, dtype=int)
-    
-    rng = np.random.RandomState(42)
-    
-    for i in range(n_perms):
-        if i % 10 == 0: print(f"  Permutation {i}/{n_perms}")
-        
-        # Shift each subject
-        shifted_data = np.zeros_like(group_data)
-        for s in range(n_subs):
-            shifted_data[:, :, s] = phase_randomize(group_data[:, :, s], random_state=rng)
-            
-        # Compute Null ISC
-        null_raw, null_z = run_isc_computation(shifted_data, chunk_size=chunk_size)
-        null_mean = np.nanmean(null_z, axis=1)
-        
-        if use_tfce:
-            # Apply TFCE to permuted map
-            null_mean_3d = np.zeros(mask.shape, dtype=np.float32)
-            null_mean_3d[mask] = null_mean
-            null_mean_3d = apply_tfce(null_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
-            null_mean = null_mean_3d[mask]
-        
-        count_greater += (np.abs(null_mean) >= np.abs(obs_mean))
-        
-    p_values = (count_greater + 1) / (n_perms + 1)
+    # 2. Phase Randomization (Parallel)
+    results = Parallel(n_jobs=-1, verbose=5)(
+        delayed(_run_phaseshift_iter)(
+            i, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i
+        ) for i in range(n_perms)
+    )
+
+    if use_tfce:
+        # FWER Correction
+        null_max_stats = np.array(results) # (n_perms,)
+        p_values = (np.sum(null_max_stats[np.newaxis, :] >= np.abs(obs_mean[:, np.newaxis]), axis=1) + 1) / (n_perms + 1)
+    else:
+        # Voxel-wise
+        null_means = np.array(results).T # (V, n_perms)
+        p_values = np.sum(np.abs(null_means) >= np.abs(obs_mean[:, np.newaxis]), axis=1) / (n_perms + 1)
     
     # Convert back to 3D for return
     obs_mean_3d = np.zeros(mask.shape, dtype=np.float32)
