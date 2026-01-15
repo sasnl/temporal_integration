@@ -65,11 +65,13 @@ for lines in `cat $params_txt_file`; do
     stats_method=`echo $line | cut -d' ' -f3`;
     n_perms=`echo $line | cut -d' ' -f4`;
     params=`echo "--condition ${condition} --isc_method ${isc_method} --stats_method ${stats_method} --n_perms ${n_perms}"`
-    echo "bash 01_run_temporal_integration_isc.sh ${code_dir} ${params} ${p_threshold} ${data_dir} ${output_dir}"
+    echo "\"bash 01_run_temporal_integration_isc.sh \"${code_dir}" "${params}" "${p_threshold}" "${data_dir}" "${output_dir}"\"
     echo '#!/bin/bash' > TI_isc.sbatch;
     echo "bash 01_run_temporal_integration_isc.sh ${code_dir} ${params} ${p_threshold} ${data_dir} ${output_dir}" >> TI_isc.sbatch;
-    sbatch -p owners,menon -c 16 --mem=${mem}G -o ${output_dir}/temporal_integration_log.txt TI_isc.sbatch;
+    sbatch -p owners,menon -c 16 --mem=${mem}G -o ${output_dir}/temporal_integration_${condition}_log.txt TI_isc.sbatch;
     rm TI_isc.sbatch;
 done
 
-#bash 01_run_temporal_integration_isc.sh /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/code/TI_code/isc --condition TI1_orig --isc_method loo --stats_method phaseshift --n_perms 1000 0.05 /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf/isc_analysis_1000_permutations
+# bash 01_run_temporal_integration_isc.sh "${code_dir}" "${params}" "${p_threshold}" "${data_dir}" "${output_dir}"
+
+#bash 01_run_temporal_integration_isc.sh isc_params_example.txt /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/code/TI_code/isc --condition TI1_orig --isc_method loo --stats_method phaseshift --n_perms 1000 0.05 /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf/isc_analysis_1000_permutations
