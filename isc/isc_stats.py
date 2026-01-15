@@ -147,18 +147,90 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=c
     
     n_trs, n_voxels, n_subs = group_data.shape
     
+    # Optimize: Since data is already processed with nan_to_num, no NaNs expected
+    # Setting tolerate_nans=False provides significant speedup per documentation
+    # Documentation states: "Note that accommodating NaNs may be notably slower"
+    has_nans = np.any(np.isnan(group_data))
+    tolerate_nans_flag = True if has_nans else False
+    if not tolerate_nans_flag:
+        print(f"Data contains no NaNs - using tolerate_nans=False for faster computation")
+    else:
+        print(f"Warning: Data contains NaNs - computation may be slower")
+    
     # Use brainiak's optimized phaseshift_isc function
     # This handles phase randomization and ISC computation efficiently
+    # Note: In leave-one-out mode, only the left-out subject is phase-randomized per iteration
+    # This is more efficient than randomizing all subjects
     print(f"Computing phase-shifted ISC with {n_perms} permutations...")
-    observed, p_values, distribution = phaseshift_isc(
-        group_data,
-        pairwise=False,
-        summary_statistic='median',
-        n_shifts=n_perms,
-        side='right',
-        tolerate_nans=True,
-        random_state=42
-    )
+    print(f"Data shape: {group_data.shape} (TRs × voxels × subjects)")
+    print(f"Processing {n_voxels:,} voxels across {n_subs} subjects...")
+    print(f"Note: This may take a while for large datasets. Consider using --roi_id for faster testing.")
+    
+    import time
+    start_time = time.time()
+    
+    # Process in chunks if chunk_size is specified and smaller than total voxels
+    # This helps with memory management and may allow better parallelization
+    if chunk_size > 0 and chunk_size < n_voxels:
+        print(f"Processing {n_voxels:,} voxels in chunks of {chunk_size:,}...")
+        n_chunks = int(np.ceil(n_voxels / chunk_size))
+        
+        # Pre-allocate output arrays
+        observed = np.zeros(n_voxels, dtype=np.float32)
+        p_values = np.zeros(n_voxels, dtype=np.float32)
+        distribution = np.zeros((n_perms, n_voxels), dtype=np.float32)
+        
+        # Process each chunk
+        for chunk_idx in range(n_chunks):
+            start_vox = chunk_idx * chunk_size
+            end_vox = min((chunk_idx + 1) * chunk_size, n_voxels)
+            chunk_voxels = end_vox - start_vox
+            
+            print(f"  Processing chunk {chunk_idx + 1}/{n_chunks} (voxels {start_vox:,} to {end_vox:,})...")
+            chunk_start_time = time.time()
+            
+            # Extract chunk of voxels: (n_TRs, chunk_voxels, n_subjects)
+            group_data_chunk = group_data[:, start_vox:end_vox, :]
+            
+            # Process chunk with phaseshift_isc
+            # Use chunk-specific random state to ensure independent phase randomizations
+            # while maintaining reproducibility
+            chunk_rng = 42 + chunk_idx if chunk_size > 0 else 42
+            obs_chunk, p_chunk, dist_chunk = phaseshift_isc(
+                group_data_chunk,
+                pairwise=False,
+                summary_statistic='median',
+                n_shifts=n_perms,
+                side='right',
+                tolerate_nans=tolerate_nans_flag,
+                random_state=chunk_rng
+            )
+            
+            # Store results
+            observed[start_vox:end_vox] = obs_chunk
+            p_values[start_vox:end_vox] = p_chunk
+            distribution[:, start_vox:end_vox] = dist_chunk
+            
+            chunk_elapsed = time.time() - chunk_start_time
+            print(f"    Chunk {chunk_idx + 1} completed in {chunk_elapsed:.2f}s ({chunk_elapsed/60:.2f} min)")
+        
+        elapsed_time = time.time() - start_time
+        print(f"Phase shift computation completed in {elapsed_time:.2f} seconds ({elapsed_time/60:.2f} minutes)")
+    else:
+        # Process all voxels at once (original approach)
+        print(f"Processing all {n_voxels:,} voxels at once...")
+        observed, p_values, distribution = phaseshift_isc(
+            group_data,
+            pairwise=False,
+            summary_statistic='median',
+            n_shifts=n_perms,
+            side='right',
+            tolerate_nans=tolerate_nans_flag,
+            random_state=42
+        )
+        
+        elapsed_time = time.time() - start_time
+        print(f"Phase shift computation completed in {elapsed_time:.2f} seconds ({elapsed_time/60:.2f} minutes)")
     
     # observed shape: (n_voxels,)
     # p_values shape: (n_voxels,)
@@ -228,7 +300,7 @@ def main():
             print("Error: --condition is required for phaseshift.")
             return
         # Phase shift loads its own data/mask inside the function to ensure compatibility
-        mean_map, p_values, mask_data, mask_affine = run_phaseshift(
+        mean_map, p_values_3d, mask_data, mask_affine = run_phaseshift(
             args.condition, roi_id, args.n_perms, 
             data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size,
             use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H
