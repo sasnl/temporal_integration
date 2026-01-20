@@ -40,14 +40,19 @@ def load_data(condition, subjects, mask, data_dir):
 
     print(f"Loading data for condition: {condition}", flush=True)
     data_list = []
+    t1 = time.time()
 
     cond_dir = os.path.join(data_dir, condition)
+    mask_xyz = np.where(mask)   # tuple of (x_idx, y_idx, z_idx)
+    n_mask_vox = mask_xyz[0].size
+    if n_mask_vox == 0:
+        raise ValueError("Mask has 0 voxels")
 
     for sub in subjects:
         search_pattern = os.path.join(cond_dir, f"{sub}_*.nii")
 
         print(f"[{condition}] {sub}: glob start -> {search_pattern}", flush=True)
-        files = glob.glob(search_pattern)
+        files = sorted(glob.glob(search_pattern))
         print(f"[{condition}] {sub}: glob done ({len(files)} files)", flush=True)
 
         if not files:
@@ -58,26 +63,20 @@ def load_data(condition, subjects, mask, data_dir):
 
         print(f"[{condition}] {sub}: nib.load start -> {file_path}", flush=True)
         img = nib.load(file_path)
-        print(f"[{condition}] {sub}: nib.load done", flush=True)
 
-        print(f"[{condition}] {sub}: get_fdata start", flush=True)
-        data = img.get_fdata(dtype=np.float32)  # (X, Y, Z, T)
-        print(f"[{condition}] {sub}: get_fdata done {data.shape}", flush=True)
-        #DE updated and reshaped and masked in 2 to reduce boolean indexing of 4D array sllowing down loading of the data.         
+        shape = img.shape          # (X, Y, Z, T)
+        x, y, z, t = shape
+        print(f"[{condition}] {sub}: image shape {shape}, masked voxels {n_mask_vox}", flush=True)
 
-        print(f"[{condition}] {sub}: reshape start", flush=True)
-        x, y, z, t = data.shape
-
+        print(f"[{condition}] {sub}: load masked voxels start", flush=True)
         t0 = time.time()
-        data_2d = data.reshape(-1, t)      # (X*Y*Z, T)
-        mask_1d = mask.reshape(-1)         # (X*Y*Z,)
-        print(f"[{condition}] {sub}: reshape done in {time.time()-t0:.2f}s", flush=True)
-        
-        print(f"[{condition}] {sub}: mask apply start", flush=True)
-        t1 = time.time()
-        masked_data = data_2d[mask_1d, :].T  # (T, n_voxels)
+
+        # Read only masked voxels across time
+        vox_by_t = np.asanyarray(img.dataobj)[mask_xyz[0], mask_xyz[1], mask_xyz[2], :]   # (n_vox, T)
+        masked_data = np.asarray(vox_by_t, dtype=np.float32).T                            # (T, n_vox)
         masked_data = np.nan_to_num(masked_data)
-        print(f"[{condition}] {sub}: mask apply done in {time.time()-t1:.2f}s shape={masked_data.shape}", flush=True)
+
+        print(f"[{condition}] {sub}: load masked voxels done in {time.time()-t0:.2f}s shape={masked_data.shape}", flush=True)
 
         # sanity checks
         if masked_data.shape[0] != t:
