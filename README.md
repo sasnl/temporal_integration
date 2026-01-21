@@ -99,6 +99,12 @@ python isfc/run_isfc_pipeline.py --condition TI1_orig --stats_method phaseshift 
 **Path Arguments:**
 - `--data_dir`, `--output_dir`, `--mask_file`: Override `config.py` defaults.
 
+### Target Seeds
+The following seeds are the primary targets for testing:
+1. **PMC**: `[0, -53, 2]` (5 mm)
+2. **Left-hemisphere pSTS**: `[-63, -42, 9]` (5 mm)
+3. **Right-hemisphere pSTS**: `[57, -31, 5]` (5 mm)
+
 ## Outputs
 
 Results are saved to `OUTPUT_DIR` (as defined in `config.py` or arguments) with the following naming convention:
