@@ -262,7 +262,7 @@ def main():
             print("Error: --condition is required for phaseshift.")
             return
         # Phase shift loads its own data/mask inside the function to ensure compatibility
-        mean_map, p_values, mask_data, mask_affine = run_phaseshift(
+        mean_map, p_values_3d, mask_data, mask_affine = run_phaseshift(
             args.condition, roi_id, args.n_perms, 
             data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size,
             use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H
