@@ -330,7 +330,12 @@ def main():
     # Save Outputs
     if not os.path.exists(output_dir): os.makedirs(output_dir)
     
-    # 1. P-values
+    # 1a. Un-thresholded Map (TFCE score or Mean Statistic)
+    stat_suffix = "tfce" if args.use_tfce else "stat"
+    stat_path = os.path.join(output_dir, f"{base_name}_desc-{stat_suffix}.nii.gz")
+    save_map(mean_map, mask_data, mask_affine, stat_path)
+
+    # 1b. P-values
     p_path = os.path.join(output_dir, f"{base_name}_desc-pvalues.nii.gz")
     save_map(p_values, mask_data, mask_affine, p_path)
     

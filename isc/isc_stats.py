@@ -339,7 +339,12 @@ def main():
         args.cluster_threshold = 0
         
     # Save Outputs
-    # 1. P-value map
+    # 1a. Un-thresholded Map (TFCE score or Mean Statistic)
+    stat_suffix = "tfce" if args.use_tfce else "stat"
+    stat_path = os.path.join(output_dir, f"{base_name}_desc-{stat_suffix}.nii.gz")
+    save_map(mean_map, mask_data, mask_affine, stat_path)
+
+    # 1b. P-value map
     p_path = os.path.join(output_dir, f"{base_name}_desc-pvalues.nii.gz")
     save_map(p_values_3d, mask_data, mask_affine, p_path)
     
