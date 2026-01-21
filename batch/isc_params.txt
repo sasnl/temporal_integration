@@ -1,0 +1,12 @@
+--condition TI1_orig --isc_method loo --stats_method phaseshift --n_perms 1000 --p_threshold 0.05
+--condition TI1_orig --isc_method loo --stats_method phaseshift --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_orig --isc_method pairwise --stats_method phaseshift --n_perms 1000 --p_threshold 0.05
+--condition TI1_orig --isc_method pairwise --stats_method phaseshift --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_sent --isc_method loo --stats_method phaseshift --n_perms 1000 --p_threshold 0.05
+--condition TI1_sent --isc_method loo --stats_method phaseshift --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_sent --isc_method pairwise --stats_method phaseshift --n_perms 1000 --p_threshold 0.05
+--condition TI1_sent --isc_method pairwise --stats_method phaseshift --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_word --isc_method loo --stats_method phaseshift --n_perms 1000 --p_threshold 0.05
+--condition TI1_word --isc_method loo --stats_method phaseshift --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_word --isc_method pairwise --stats_method phaseshift --n_perms 1000 --p_threshold 0.05
+--condition TI1_word --isc_method pairwise --stats_method phaseshift --n_perms 1000 --p_threshold 0.05 --use_tfce
