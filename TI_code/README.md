@@ -6,22 +6,27 @@ The pipeline is designed to be modular, separating computation (Step 1) from sta
 
 ## Project Structure
 
-### Pipelines
-Orphan scripts to run the full analysis.
-- **`run_isc_pipeline.py`**: Orchestrates the ISC analysis (Compute + Stats).
-- **`run_isfc_pipeline.py`**: Orchestrates the ISFC analysis (Compute + Stats).
+### Directory Structure Overview
 
-### Core Scripts
-- **`isc_compute.py`**: Step 1 of ISC. Computes raw and Fisher-Z transformed ISC maps.
-- **`isc_stats.py`**: Step 2 of ISC. Performs statistical tests (T-test, Bootstrap, Phase Shift) on ISC maps.
-- **`isfc_compute.py`**: Step 1 of ISFC. Computes seed-based ISFC maps.
-- **`isfc_stats.py`**: Step 2 of ISFC. Performs statistical tests on ISFC maps.
-
-### Configuration
-- **`config.py`**: Central configuration file to set default paths (`DATA_DIR`, `OUTPUT_DIR`, `MASK_FILE`) and subject lists. Edit this file to match your local or HPC environment.
-
-### Utilities
-- **`isc_utils.py`**: Common helper functions.
+```text
+code/TI_code/
+├── isc/                  # Inter-Subject Correlation analysis
+│   ├── run_isc_pipeline.py
+│   ├── isc_compute.py
+│   └── isc_stats.py
+├── isfc/                 # Inter-Subject Functional Connectivity analysis
+│   ├── run_isfc_pipeline.py
+│   ├── isfc_compute.py
+│   └── isfc_stats.py
+├── shared/               # Shared utilities and configuration
+│   ├── config.py
+│   └── pipeline_utils.py
+├── mask/                 # Standard brain masks
+│   └── MNI152_T1_2mm_brain_mask.nii
+├── batch/                # SLURM batch scripts for HPC
+├── requirements.txt      # Python dependencies
+└── README.md             # This file
+```
 
 ## Dependencies
 
@@ -42,14 +47,14 @@ For detailed instructions on deploying and running this code on Stanford's Sherl
 
 ## Usage
 
-You can configure input/output paths either by editing `config.py` (recommended for recurring usage) or by passing command-line arguments.
+You can configure input/output paths either by editing `shared/config.py` (recommended for recurring usage) or by passing command-line arguments.
 
 ### 1. Inter-Subject Correlation (ISC)
 
-Run the full pipeline using `run_isc_pipeline.py`:
+Run the full pipeline using `isc/run_isc_pipeline.py`:
 
 ```bash
-python run_isc_pipeline.py --condition TI1_orig --isc_method loo --stats_method bootstrap --n_perms 1000
+python isc/run_isc_pipeline.py --condition TI1_orig --isc_method loo --stats_method bootstrap --n_perms 1000
 ```
 
 **Key Arguments:**
@@ -57,26 +62,29 @@ python run_isc_pipeline.py --condition TI1_orig --isc_method loo --stats_method 
 - `--isc_method`: `loo` (Leave-One-Out) or `pairwise`.
 - `--stats_method`: `ttest`, `bootstrap`, or `phaseshift`.
 - `--roi_id` (Optional): Run analysis within a specific ROI (using Atlas ID).
-- `--threshold`: P-value threshold (default: 0.05).
+- `--p_threshold`: P-value threshold (default: 0.05).
 
 **Path Arguments (Optional overrides):**
-- `--data_dir`: Path to input data directory.
-- `--output_dir`: Path to save results.
-- `--mask_file`: Path to brain mask file.
+- `--data_dir`: Path to input data directory (overrides `config.py`).
+- `--output_dir`: Path to output directory (overrides `config.py`).
+- `--mask_file`: Path to mask file (overrides `config.py`).
+- `--chunk_size`: Number of voxels per chunk (default: 5000). Set to a large number (e.g., 300000) to disable chunking.
 
 ### 2. Inter-Subject Functional Correlation (ISFC)
 
-Run the seed-based ISFC pipeline using `run_isfc_pipeline.py`:
+Run the seed-based ISFC pipeline using `isfc/run_isfc_pipeline.py`:
 
 ```bash
-python run_isfc_pipeline.py --condition TI1_orig --stats_method phaseshift --seed_x 45 --seed_y -30 --seed_z 10
+python isfc/run_isfc_pipeline.py --condition TI1_orig --stats_method phaseshift --seed_x 45 --seed_y -30 --seed_z 10
 ```
 
 **Key Arguments:**
 - `--condition`: Condition name.
 - `--seed_x`, `--seed_y`, `--seed_z`: MNI coordinates for the seed.
+- `--seed_file`: Path to NIfTI ROI file to use as seed (Mutually exclusive with coordinates).
 - `--seed_radius`: Radius of the seed sphere in mm (default: 5).
 - `--stats_method`: `ttest`, `bootstrap`, or `phaseshift`.
+- `--isfc_method`: `loo` or `pairwise`.
 
 **Path Arguments:**
 - `--data_dir`, `--output_dir`, `--mask_file`: Override `config.py` defaults.

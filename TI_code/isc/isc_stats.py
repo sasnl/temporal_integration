@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 import time
 import nibabel as nib
+from joblib import Parallel, delayed
 from scipy.stats import ttest_1samp
 from brainiak.utils.utils import phase_randomize
 
@@ -52,6 +53,27 @@ def parse_args():
                         help=f'Chunk size (default: {config.CHUNK_SIZE})')
     return parser.parse_args()
 
+
+
+def _run_phaseshift_iter(i, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
+    n_subs = group_data.shape[2]
+    rng = np.random.RandomState(seed)
+    
+    shifted_data = np.zeros_like(group_data)
+    for s in range(n_subs):
+        shifted_data[:, :, s] = phase_randomize(group_data[:, :, s], random_state=rng)
+        
+    null_raw, null_z = run_isc_computation(shifted_data, chunk_size=chunk_size)
+    null_mean = np.nanmean(null_z, axis=1)
+    
+    if use_tfce:
+        null_mean_3d = np.zeros(mask.shape, dtype=np.float32)
+        null_mean_3d[mask] = null_mean
+        null_mean_3d = apply_tfce(null_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
+        return np.max(np.abs(null_mean_3d))
+    else:
+        return null_mean
+
 def run_ttest(data_4d):
     """
     Run one-sample T-test against 0 on the last dimension of data (subjects/pairs).
@@ -62,6 +84,21 @@ def run_ttest(data_4d):
     t_stats, p_values = ttest_1samp(data_4d, popmean=0, axis=-1, nan_policy='omit')
     mean_map = np.nanmean(data_4d, axis=-1)
     return mean_map, p_values
+    
+def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, seed):
+    rng = np.random.RandomState(seed)
+    indices = rng.randint(0, n_samples, size=n_samples)
+    sample = data_centered[:, indices]
+    perm_mean = np.nanmean(sample, axis=1)
+    
+    if use_tfce:
+        perm_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
+        perm_mean_3d[mask_3d] = perm_mean
+        perm_mean_3d = apply_tfce(perm_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
+        return np.max(np.abs(perm_mean_3d))
+    else:
+        return perm_mean
+
 
 def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, mask_3d=None, tfce_E=0.5, tfce_H=2.0):
     """
@@ -86,7 +123,7 @@ def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42, use_tfce=F
     """
     print(f"Running Bootstrap (n={n_bootstraps})...")
     n_voxels, n_samples = data_4d.shape
-    rng = np.random.RandomState(random_state)
+        n_voxels, n_samples = data_4d.shape
     
     # Observed mean
     observed_mean = np.nanmean(data_4d, axis=1)
@@ -100,28 +137,22 @@ def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42, use_tfce=F
         observed_mean_3d = apply_tfce(observed_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
         observed_mean = observed_mean_3d[mask_3d]
     
-    # Center data per voxel
-    # For NaNs: if voxel has NaNs, mean is computed from valid subjects.
-    # We center valid subjects by subtracting the observed (nan)mean.
-    # NaNs remain NaNs.
+    # Center data
     data_centered = data_4d - np.nanmean(data_4d, axis=1, keepdims=True)
     
-    null_means = np.zeros((n_voxels, n_bootstraps), dtype=np.float32)
+    # Parallelize
+    results = Parallel(n_jobs=-1, verbose=5)(
+        delayed(_run_bootstrap_iter)(
+            i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, random_state + i
+        ) for i in range(n_bootstraps)
+    )
     
-    for i in range(n_bootstraps):
-        # Resample indices with replacement
-        indices = rng.randint(0, n_samples, size=n_samples)
-        sample = data_centered[:, indices]
-        perm_mean = np.nanmean(sample, axis=1)
-        
-        if use_tfce:
-            # Apply TFCE to permuted map
-            perm_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
-            perm_mean_3d[mask_3d] = perm_mean
-            perm_mean_3d = apply_tfce(perm_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
-            perm_mean = perm_mean_3d[mask_3d]
-        
-        null_means[:, i] = perm_mean
+    if use_tfce:
+        # Results are list of max-stats (one per bootstrap)
+        null_max_stats = np.array(results) # (n_bootstraps,)
+    else:
+        # Results are list of arrays (n_voxels,)
+        null_means = np.array(results).T # (n_voxels, n_bootstraps)
         
     # P-value: Proportion of null means >= observed mean (two-sided: use absolute values)
     with np.errstate(invalid='ignore'):

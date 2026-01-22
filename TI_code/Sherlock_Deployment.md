@@ -4,8 +4,6 @@ This guide explains how to deploy the **TI_code** project to Stanford's Sherlock
 
 ## 1. Transfer Code to Sherlock
 
-## 1. Transfer Code to Sherlock
-
 > [!IMPORTANT]
 > **This step must be run from your LOCAL computer's terminal**, NOT from inside Sherlock. 
 > If you see `No such file or directory`, you are likely running this on Sherlock by mistake.
@@ -73,7 +71,7 @@ pip install -r requirements.txt
 You have two options to configure paths (Data, Output, Mask):
 
 ### Option A: Edit `config.py` (Recommended for default usage)
-Edit `code/TI_code/config.py` on Sherlock to match your directories.
+Edit `code/TI_code/shared/config.py` on Sherlock to match your directories.
 
 ```python
 DATA_DIR = '/scratch/users/YOUR_SUNET/temporal_integration/data/td/hpf'
@@ -94,14 +92,14 @@ To test quickly, use an interactive session:
 sh_dev -t 1:00:00 # Request 1 hour dev node
 ml python/3.9.0 openmpi
 source isc_env/bin/activate
-python run_isc_pipeline.py --condition TI1_orig
+python isc/run_isc_pipeline.py --condition TI1_orig
 ```
 
 ### Batch Submission
-Edit the `sherlock_job.sbatch` file to point to your correct paths, then submit:
+Edit the `isc/sherlock_job_isc.sbatch` file (or `isfc/sherlock_job_isfc.sbatch`) to point to your correct paths, then submit:
 
 ```bash
-sbatch sherlock_job.sbatch
+sbatch isc/sherlock_job_isc.sbatch
 ```
 
 Monitor your job:
