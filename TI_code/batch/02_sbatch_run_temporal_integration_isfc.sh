@@ -71,6 +71,6 @@ for lines in `cat $params_txt_file`; do
     \"${data_dir}\" \
     \"${output_dir}_${p_from_file}\" \
     \"${p_from_file}\"" >> TI_isfc.sbatch
-    sbatch -p menon,owners -c 16 --mem=${mem}G -t 10:00:00 -o "${output_dir}/temporal_integration_${condition}_seed_${seed_x}_${seed_y}_${seed_z}_${p_from_file}_${tfce_flag}_log.txt" TI_isfc.sbatch;
+    sbatch -p menon -c 16 --mem=${mem}G -t 10:00:00 -o "${output_dir}/temporal_integration_${condition}_seed_${seed_x}_${seed_y}_${seed_z}_${p_from_file}_${tfce_flag}_log.txt" TI_isfc.sbatch;
     rm TI_isfc.sbatch;
 done
