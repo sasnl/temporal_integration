@@ -1,60 +1,34 @@
 #!/bin/bash
-#
-usage() {
-  cat <<EOF
-USAGE:
-  sbatch 02_sbatch_temporal_integration_isc.sh \\
-         <param_file> \\
-         <code_dir> \\
-         <p_threshold> \\
-         <data_dir> \\
-         <output_dir> \\
-         <mem_gb>
-
-DESCRIPTION:
-  Submits one ISC job per line in <param_file> to Sherlock via SLURM.
-
-  Each line in <param_file> must be a single comma-separated entry:
-    condition,isc_method,stats_method,n_perms
-    see example isc_params_example.txt
-
-  Example line:
-    TI1_orig,loo,phaseshift,1000
-
-ARGUMENTS:
-  param_file   Text file with one ISC run per line
-  code_dir     Path to TI_code/isc directory
-  p_threshold  P-value threshold (e.g. 0.05)
-  data_dir     Directory containing condition folders
-  output_dir   Directory for ISC outputs and logs
-  mem_gb       Memory per job in GB (e.g. 64)
-
-EXAMPLE:
-  sbatch 02_sbatch_temporal_integration_isc.sh \\
-         isc_params_example.txt \\
-         /oak/.../TI_code/isc \\
-         0.05 \\
-         /oak/.../hpf \\
-         /oak/.../isc_analysis \\
-         64
-NOTES:
-  - Calls 01_run_temporal_integration_isc.sh internally
-  - One SLURM job is submitted per line in <param_file>
-  - Designed for whole-brain ISC with high memory usage
-
-EOF
-}
-
-if [ "$#" -ne 6 ]; then
-    usage
-fi
 
 params_txt_file=$1
 code_dir=$2 #/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/code/TI_code/isc
-p_threshold=$3
-data_dir=$4 #/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf
-output_dir=$5 #/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf/isc_analysis_1000_permutations
-mem=$6
+data_dir=$3 #/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf
+output_dir=$4 #/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf/isc_analysis_1000_permutations_hpc
+mem=$5
+
+
+usage() {
+    echo "Usage:"
+    echo " - Designed for whole-brain ISC with high memory usage"
+    echo "  sbatch 02_sbatch_temporal_integration_isc.sh \\"
+    echo "         <param_file> <code_dir> <data_dir> <output_dir> <mem_gb>"
+    echo ""
+    echo "Arguments:"
+    echo "  <param_file>   Text file with one ISC run per line"
+    echo "                 Format: condition,isc_method,stats_method,n_perms"
+    echo "  <code_dir>     Path to TI_code/isc directory"
+    echo "  <data_dir>     Directory containing condition folders"
+    echo "  <output_dir>   Output directory for ISC results and logs"
+    echo "  <mem_gb>       Memory per job in GB (e.g. 64)"
+    echo ""
+    echo "Example:"
+    echo " bash 02_sbatch_run_temporal_integration_isc.sh isc_params_example.txt /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isc /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/updated_results/td/ /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/updated_results/td/isc_analysis_1000_permutations_hpc_0.05 32;"
+    exit 1 
+}
+
+if [ "$#" -ne 5 ]; then
+    usage
+fi
 
 cd /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/batch 
 
@@ -64,14 +38,28 @@ for lines in `cat $params_txt_file`; do
     isc_method=`echo $line | cut -d' ' -f2`;
     stats_method=`echo $line | cut -d' ' -f3`;
     n_perms=`echo $line | cut -d' ' -f4`;
-    params=`echo "--condition ${condition} --isc_method ${isc_method} --stats_method ${stats_method} --n_perms ${n_perms}"`
-    echo "\"bash 01_run_temporal_integration_isc.sh \"${code_dir}" "${params}" "${p_threshold}" "${data_dir}" "${output_dir}"\"
+    p_from_file=`echo $line | cut -d' ' -f5`
+    tfce_flag=`echo $line | cut -d' ' -f6`
+
+    # if [ -n "$p_from_file" ]; then
+    #     pval="$p_from_file"
+    # else
+    #     pval="$p_threshold"
+    # fi
+    
+    params=`echo "--condition ${condition} --isc_method ${isc_method} --stats_method ${stats_method} --n_perms ${n_perms} --p_threshold ${p_from_file}"`
+
+    if [ "$tfce_flag" = "use_tfce" ]; then
+        params="${params} --use_tfce"
+    fi
+
     echo '#!/bin/bash' > TI_isc.sbatch;
-    echo "bash 01_run_temporal_integration_isc.sh ${code_dir} ${params} ${p_threshold} ${data_dir} ${output_dir}" >> TI_isc.sbatch;
-    sbatch -p owners,menon -c 16 --mem=${mem}G -o ${output_dir}/temporal_integration_${condition}_log.txt TI_isc.sbatch;
+    echo "bash 01_run_temporal_integration_isc.sh \
+    \"${code_dir}\" \
+    \"${params}\" \
+    \"${data_dir}\" \
+    \"${output_dir}\" \
+    \"${p_from_file}\"" >> TI_isc.sbatch
+    sbatch -p menon,owners -c 16 --mem=${mem}G -t 10:00:00 -o "${output_dir}/temporal_integration_${condition}_${p_from_file}_${tfce_flag}_log.txt" TI_isc.sbatch;
     rm TI_isc.sbatch;
 done
-
-# bash 01_run_temporal_integration_isc.sh "${code_dir}" "${params}" "${p_threshold}" "${data_dir}" "${output_dir}"
-
-#bash 01_run_temporal_integration_isc.sh isc_params_example.txt /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/code/TI_code/isc --condition TI1_orig --isc_method loo --stats_method phaseshift --n_perms 1000 0.05 /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf/isc_analysis_1000_permutations

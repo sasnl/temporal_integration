@@ -36,18 +36,16 @@ usage() {
 }
 
 # ---- argument check ----
-if [ "$#" -ne 5 ]; then
+if [ "$#" -ne 4 ]; then
     echo "ERROR: Incorrect number of arguments."
     usage
 fi
 
-
 code_path=$1 #" /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isc
 param_string=$2 #row from isc_params_example.txt
 #"TI1_orig, TI1_sent, TI1_"
-p_threshold=$3
-data_dir=$4
-output_dir=$5
+data_dir=$3
+output_dir=$4
 
 env_path=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/isc_env
 mask_file="/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/mask/MNI152_T1_2mm_brain_mask.nii"
@@ -62,11 +60,11 @@ echo "Expanded argv:"
 printf "  %q\n" "${PARAM_ARR[@]}"
 
 #run script 
-${env_path}/bin/python ${code_path}/run_isc_pipeline.py \
+${env_path}/bin/python ${code_path}/run_isfc_pipeline.py \
 ${param_string} \
- "--p_threshold" ${p_threshold} \
  "--data_dir" ${data_dir} \
  "--output_dir" ${output_dir} \
  "--mask_file" ${mask_file}
  
 #   param_string="--condition TI1_sent --isc_method loo --stats_method phaseshift --n_perms 1000";p_threshold=0.05; data_dir=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf;  output_dir=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf/isc_analysis_1000_permutations_hpc;env_path=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/isc_env;mask_file="/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/mask/MNI152_T1_2mm_brain_mask.nii";
+#--condition TI1_orig --seed_x 45 --seed_y -30 --seed_z 10 --seed_radius 5 --stats_method phaseshift --n_perms 1000

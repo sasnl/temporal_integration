@@ -1,3 +1,47 @@
 --condition TI1_orig --seed_x 45 --seed_y -30 --seed_z 10 --seed_radius 5 --stats_method phaseshift --n_perms 1000
+--condition TI1_orig --seed_x 45 --seed_y -30 --seed_z 10 --seed_radius 5 --stats_method phaseshift --n_perms 1000
+--condition TI1_orig --seed_x 45 --seed_y -30 --seed_z 10 --seed_radius 5 --stats_method phaseshift --n_perms 1000
+--condition TI1_sent --seed_x 45 --seed_y -30 --seed_z 10 --seed_radius 5 --stats_method phaseshift --n_perms 1000
+--condition TI1_sent --seed_x 45 --seed_y -30 --seed_z 10 --seed_radius 5 --stats_method phaseshift --n_perms 1000
 --condition TI1_sent --seed_x 45 --seed_y -30 --seed_z 10 --seed_radius 5 --stats_method phaseshift --n_perms 1000
 --condition TI1_word --seed_x 45 --seed_y -30 --seed_z 10 --seed_radius 5 --stats_method phaseshift --n_perms 1000
+--condition TI1_word --seed_x 45 --seed_y -30 --seed_z 10 --seed_radius 5 --stats_method phaseshift --n_perms 1000
+--condition TI1_word --seed_x 45 --seed_y -30 --seed_z 10 --seed_radius 5 --stats_method phaseshift --n_perms 1000
+
+
+--condition TI1_orig --isfc_method loo --stats_method phaseshift --seed_x 0 --seed_y -53 --seed_z 2 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_orig --isfc_method loo --stats_method phaseshift --seed_x 0 --seed_y -53 --seed_z 2 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_orig --isfc_method pairwise --stats_method phaseshift --seed_x 0 --seed_y -53 --seed_z 2 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_orig --isfc_method pairwise --stats_method phaseshift --seed_x 0 --seed_y -53 --seed_z 2 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_sent --isfc_method loo --stats_method phaseshift --seed_x 0 --seed_y -53 --seed_z 2 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_sent --isfc_method loo --stats_method phaseshift --seed_x 0 --seed_y -53 --seed_z 2 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_sent --isfc_method pairwise --stats_method phaseshift --seed_x 0 --seed_y -53 --seed_z 2 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_sent --isfc_method pairwise --stats_method phaseshift --seed_x 0 --seed_y -53 --seed_z 2 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_word --isfc_method loo --stats_method phaseshift --seed_x 0 --seed_y -53 --seed_z 2 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_word --isfc_method loo --stats_method phaseshift --seed_x 0 --seed_y -53 --seed_z 2 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_word --isfc_method pairwise --stats_method phaseshift --seed_x 0 --seed_y -53 --seed_z 2 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_word --isfc_method pairwise --stats_method phaseshift --seed_x 0 --seed_y -53 --seed_z 2 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_orig --isfc_method loo --stats_method phaseshift --seed_x -63 --seed_y -42 --seed_z 9 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_orig --isfc_method loo --stats_method phaseshift --seed_x -63 --seed_y -42 --seed_z 9 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_orig --isfc_method pairwise --stats_method phaseshift --seed_x -63 --seed_y -42 --seed_z 9 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_orig --isfc_method pairwise --stats_method phaseshift --seed_x -63 --seed_y -42 --seed_z 9 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_sent --isfc_method loo --stats_method phaseshift --seed_x -63 --seed_y -42 --seed_z 9 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_sent --isfc_method loo --stats_method phaseshift --seed_x -63 --seed_y -42 --seed_z 9 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_sent --isfc_method pairwise --stats_method phaseshift --seed_x -63 --seed_y -42 --seed_z 9 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_sent --isfc_method pairwise --stats_method phaseshift --seed_x -63 --seed_y -42 --seed_z 9 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_word --isfc_method loo --stats_method phaseshift --seed_x -63 --seed_y -42 --seed_z 9 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_word --isfc_method loo --stats_method phaseshift --seed_x -63 --seed_y -42 --seed_z 9 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_word --isfc_method pairwise --stats_method phaseshift --seed_x -63 --seed_y -42 --seed_z 9 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_word --isfc_method pairwise --stats_method phaseshift --seed_x -63 --seed_y -42 --seed_z 9 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_orig --isfc_method loo --stats_method phaseshift --seed_x 57 --seed_y -31 --seed_z 5 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_orig --isfc_method loo --stats_method phaseshift --seed_x 57 --seed_y -31 --seed_z 5 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_orig --isfc_method pairwise --stats_method phaseshift --seed_x 57 --seed_y -31 --seed_z 5 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_orig --isfc_method pairwise --stats_method phaseshift --seed_x 57 --seed_y -31 --seed_z 5 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_sent --isfc_method loo --stats_method phaseshift --seed_x 57 --seed_y -31 --seed_z 5 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_sent --isfc_method loo --stats_method phaseshift --seed_x 57 --seed_y -31 --seed_z 5 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_sent --isfc_method pairwise --stats_method phaseshift --seed_x 57 --seed_y -31 --seed_z 5 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_sent --isfc_method pairwise --stats_method phaseshift --seed_x 57 --seed_y -31 --seed_z 5 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_word --isfc_method loo --stats_method phaseshift --seed_x 57 --seed_y -31 --seed_z 5 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_word --isfc_method loo --stats_method phaseshift --seed_x 57 --seed_y -31 --seed_z 5 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce
+--condition TI1_word --isfc_method pairwise --stats_method phaseshift --seed_x 57 --seed_y -31 --seed_z 5 --seed_radius 5 --n_perms 1000 --p_threshold 0.05
+--condition TI1_word --isfc_method pairwise --stats_method phaseshift --seed_x 57 --seed_y -31 --seed_z 5 --seed_radius 5 --n_perms 1000 --p_threshold 0.05 --use_tfce

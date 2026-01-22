@@ -1,0 +1,6 @@
+TI1_orig,loo,phaseshift,1000,0.05,use_tfce
+TI1_orig,pairwise,phaseshift,1000,0.05,use_tfce
+TI1_sent,loo,phaseshift,1000,0.05,use_tfce
+TI1_sent,pairwise,phaseshift,1000,0.05,use_tfce
+TI1_word,loo,phaseshift,1000,0.05,use_tfce
+TI1_word,pairwise,phaseshift,1000,0.05,use_tfce

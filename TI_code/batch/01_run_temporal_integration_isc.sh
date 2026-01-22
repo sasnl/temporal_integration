@@ -9,30 +9,43 @@
 #   Batch and execution scripts for running whole-brain or ROI-based
 #   Inter-Subject Correlation (ISC) analyses on Sherlock (SLURM),
 #   using the Temporal Integration codebase.
-#
+
 usage() {
     echo ""
     echo "USAGE:"
     echo "  $0 <code_path> <param_string> <p_threshold> <data_dir> <output_dir>"
     echo ""
     echo "ARGUMENTS:"
-    echo "  code_path     Absolute path to isc directory with directory"
-    echo "  param_string  Quoted parameter string passed to run_isc_pipeline.py"
-    echo "                Example:"
-    echo "                  \"--condition TI1_orig --isc_method loo --stats_method bootstrap --n_perms 1000\""
-    echo "  p_threshold   P-value threshold (e.g. 0.05)"
-    echo "  data_dir      Path to preprocessed fMRI data"
-    echo "  output_dir    Output directory for ISC results"
+    echo "  code_path Absolute path to the ISC code directory containing run_isc_pipeline.py"\"
+    echo "      Example:\"/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isc"\"
     echo ""
-    echo "EXAMPLE:"
-    echo "  $0  \\"
-    echo "     \"--condition TI1_orig --isc_method loo --stats_method bootstrap --n_perms 1000\" \\"
-    echo "     0.05 \\"
-    echo "     /oak/.../td/hpf \\"
-    echo "     /oak/.../td/hpf/isc_analysis"
+    echo "  param_string: Quoted parameter string passed directly to run_isc_pipeline.py"
+    echo "      This should match the argparse flags expected by the pipeline."
+    echo "      Example: \"--condition TI1_orig --isc_method loo --stats_method bootstrap --n_perms 1000\""
+    echo ""
+    echo "  data_dir"
+    echo "      Path to preprocessed fMRI data directory containing condition subfolders"
+    echo "      Example:"
+    echo "        /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/"
+    echo "        post_processed_wholebrain/filtered/06-2025/td/hpf"
+    echo ""
+    echo "  output_dir: Output directory where ISC results, maps, and logs will be written"
+    echo "      Example: /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/updated_results/td"
+    echo ""
+    echo "  p_threshold: P value threshold used for statistical masking"\"
+    echo "      Example: 0.05"\"
+    echo ""
+
+    echo "EXAMPLE COMMAND:"
+    echo "  $0 \\"
+    echo "    /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/"
+    echo "    taskfmri/temporal_integration/TI_code/isc \\"
+    echo "    \"--condition TI1_orig --isc_method loo --stats_method bootstrap --n_perms 1000\" \\"
+    echo "    0.05 \\"
+    echo "    /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf \\"
+    echo "    /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf/isc_analysis_1000_permutations_0.05"
     echo ""
     exit 1
-
 }
 
 # ---- argument check ----
@@ -45,9 +58,9 @@ fi
 code_path=$1 #" /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isc
 param_string=$2 #row from isc_params_example.txt
 #"TI1_orig, TI1_sent, TI1_"
-p_threshold=$3
-data_dir=$4
-output_dir=$5
+data_dir=$3
+output_dir=$4
+thresh=$5
 
 env_path=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/isc_env
 mask_file="/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/mask/MNI152_T1_2mm_brain_mask.nii"
@@ -64,9 +77,8 @@ printf "  %q\n" "${PARAM_ARR[@]}"
 #run script 
 ${env_path}/bin/python ${code_path}/run_isc_pipeline.py \
 ${param_string} \
- "--p_threshold" ${p_threshold} \
  "--data_dir" ${data_dir} \
- "--output_dir" ${output_dir} \
+ "--output_dir" ${output_dir}_${thresh} \
  "--mask_file" ${mask_file}
  
 #   param_string="--condition TI1_sent --isc_method loo --stats_method phaseshift --n_perms 1000";p_threshold=0.05; data_dir=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf;  output_dir=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf/isc_analysis_1000_permutations_hpc;env_path=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/isc_env;mask_file="/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/mask/MNI152_T1_2mm_brain_mask.nii";
