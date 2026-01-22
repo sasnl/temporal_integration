@@ -206,10 +206,10 @@ def run_bootstrap_brainiak(data_4d, n_bootstraps=1000, random_state=42, use_tfce
         count_greater = n_boots - indices
         p_values_corrected = (count_greater + 1) / (n_boots + 1)
         
-        # Return both observed median and the corrected p-values
-        # Note: we return 'observed' (median) map, but the p-values correspond to the TFCE test.
-        # The user's code expects (mean_map, p_values). We return (median_map, p_values).
-        return observed, p_values_corrected
+        # Return TFCE map and corrected p-values
+        # Note: We return the TFCE map (obs_tfce_flat) to be consistent with run_phaseshift
+        # and because the output filename is *_desc-tfce.nii.gz
+        return obs_tfce_flat, p_values_corrected
 
     else:
         # If no TFCE, just return the brainiak p-values
