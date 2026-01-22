@@ -6,6 +6,8 @@ isc_env/
 
 # local environments
 isc_env/
+isc_env_tmp/
+TI_code_backup/
 
 # python
 __pycache__/
