@@ -58,7 +58,7 @@ for lines in `cat $params_txt_file`; do
     \"${code_dir}\" \
     \"${params}\" \
     \"${data_dir}\" \
-    \"${output_dir}\" \
+    \"${output_dir}_${p_from_file}\" \
     \"${p_from_file}\"" >> TI_isc.sbatch
     sbatch -p menon,owners -c 16 --mem=${mem}G -t 10:00:00 -o "${output_dir}/temporal_integration_${condition}_${p_from_file}_${tfce_flag}_log.txt" TI_isc.sbatch;
     rm TI_isc.sbatch;
