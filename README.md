@@ -111,6 +111,30 @@ python shared/rethreshold_results.py --result_dir /path/to/results --thresholds 
 - `--result_dir`: Root directory containing analysis results. The script recursively scans for `_desc-pvalues.nii.gz` maps.
 - `--thresholds`: List of p-value thresholds to apply (default: 0.01, 0.005, 0.001).
 
+### 4. Contrast Analysis (Within-Subject)
+
+Perform paired statistical comparisons between conditions (e.g., Orig vs Sent) for subjects who have data in all conditions.
+
+**Features:**
+- **Automated Subject Filtering**: Uses `have_all_3` column in the subject list Excel file to select valid subjects.
+- **Statistical Methods**: Paired T-Test, Sign Permutation (Robust), or Bootstrap.
+- **Correction**: Supports TFCE (recommended) or Cluster-based thresholding.
+
+**Usage:**
+
+```bash
+python shared/run_contrast.py --cond1 TI1_orig --cond2 TI1_sent --type isc --method sign_perm --n_perms 1000 --use_tfce
+```
+
+**Key Arguments:**
+- `--cond1`, `--cond2`: Condition names to compare.
+- `--type`: `isc` or `isfc`.
+- `--method`: `sign_perm` (Recommended), `ttest`, or `bootstrap`.
+- `--seed_name`: (ISFC only) Seed identifier string matching your ISFC filenames (e.g., `seed-01_Left_HG`).
+- `--use_tfce`: Enable TFCE correction (for `sign_perm` or `bootstrap`).
+- `--p_threshold`: P-value threshold (default: 0.05).
+- `--subject_list_file`: Path to excel file (default: configured path).
+
 ### Target Seeds
 The following seeds are the primary targets for testing:
 1. **PMC**: `[0, -53, 2]` (5 mm)
