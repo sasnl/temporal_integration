@@ -50,6 +50,6 @@ python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method pairwise --s
 
 echo "=== Analysis Complete. Starting Re-thresholding ==="
 
-python shared/rethreshold_results.py --result_dir "$RESULT_DIR" --thresholds 0.01 0.005 0.001
+python shared/rethreshold_results.py --result_dir "$RESULT_DIR" --thresholds 0.01 0.005 0.001 --overwrite
 
 echo "Done."

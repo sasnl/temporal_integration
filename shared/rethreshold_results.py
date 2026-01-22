@@ -15,12 +15,13 @@ except ImportError:
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     from pipeline_utils import save_map, save_plot
 
-def rethreshold_results(result_dir, thresholds):
+def rethreshold_results(result_dir, thresholds, overwrite=False):
     """
     Scan result directory for p-value maps (ISC and ISFC) and apply additional thresholds.
     """
     print(f"Scanning directory: {result_dir}")
     print(f"Applying thresholds: {thresholds}")
+    print(f"Overwrite existing files: {overwrite}")
     
     # Find all p-value maps
     # Pattern: *_desc-pvalues.nii.gz
@@ -59,7 +60,7 @@ def rethreshold_results(result_dir, thresholds):
                     # Naming convention: {base}_desc-sig_p{thresh}.nii.gz
                     output_sig_path = os.path.join(root, f"{base_name}_desc-sig_p{thresh_str}.nii.gz")
                     
-                    if os.path.exists(output_sig_path):
+                    if os.path.exists(output_sig_path) and not overwrite:
                         print(f"  Skipping p<{thresh}: already exists.")
                         continue
                         
@@ -86,6 +87,8 @@ if __name__ == "__main__":
                         help='Root directory containing results (e.g., /path/to/result)')
     parser.add_argument('--thresholds', type=float, nargs='+', default=[0.01, 0.005, 0.001],
                         help='List of p-value thresholds to apply (default: 0.01 0.005 0.001)')
+    parser.add_argument('--overwrite', action='store_true',
+                        help='Overwrite existing significance maps')
     args = parser.parse_args()
     
-    rethreshold_results(args.result_dir, args.thresholds)
+    rethreshold_results(args.result_dir, args.thresholds, args.overwrite)

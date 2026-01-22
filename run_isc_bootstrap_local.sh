@@ -29,6 +29,6 @@ python isc/run_isc_pipeline.py --condition TI1_word --isc_method pairwise --stat
 
 echo "=== Analysis Complete. Starting Re-thresholding ==="
 
-python shared/rethreshold_results.py --result_dir "$RESULT_DIR" --thresholds 0.01 0.005 0.001
+python shared/rethreshold_results.py --result_dir "$RESULT_DIR" --thresholds 0.01 0.005 0.001 --overwrite
 
 echo "Done."
