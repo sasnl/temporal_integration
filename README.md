@@ -99,6 +99,18 @@ python isfc/run_isfc_pipeline.py --condition TI1_orig --stats_method phaseshift 
 **Path Arguments:**
 - `--data_dir`, `--output_dir`, `--mask_file`: Override `config.py` defaults.
 
+### 3. Re-thresholding Results
+
+To efficiently apply additional p-value thresholds to existing results (ISC or ISFC) without re-running computationally expensive permutations, use the `shared/rethreshold_results.py` utility.
+
+```bash
+python shared/rethreshold_results.py --result_dir /path/to/results --thresholds 0.01 0.005 0.001
+```
+
+**Arguments:**
+- `--result_dir`: Root directory containing analysis results. The script recursively scans for `_desc-pvalues.nii.gz` maps.
+- `--thresholds`: List of p-value thresholds to apply (default: 0.01, 0.005, 0.001).
+
 ### Target Seeds
 The following seeds are the primary targets for testing:
 1. **PMC**: `[0, -53, 2]` (5 mm)
