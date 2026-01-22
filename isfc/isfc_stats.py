@@ -169,7 +169,12 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
     
     mask, affine = load_mask(mask_file, roi_id=roi_id)
     if np.sum(mask) == 0: raise ValueError("Empty mask")
-    group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
+    if condition in config.SUBJECT_LISTS:
+        subjects = config.SUBJECT_LISTS[condition]
+    else:
+        subjects = config.SUBJECTS
+        
+    group_data = load_data(condition, subjects, mask, data_dir)
     if group_data is None: raise ValueError("No data")
     
     if seed_file:

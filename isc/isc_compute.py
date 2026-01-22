@@ -61,7 +61,14 @@ def main():
         return
 
     # Load Data
-    group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
+    if condition in config.SUBJECT_LISTS:
+        subjects = config.SUBJECT_LISTS[condition]
+        print(f"Using subject list for condition {condition}: {len(subjects)} subjects")
+    else:
+        print(f"Warning: Condition {condition} not found in SUBJECT_LISTS. Using default SUBJECTS.")
+        subjects = config.SUBJECTS
+
+    group_data = load_data(condition, subjects, mask, data_dir)
     if group_data is None:
         print("Error: No data loaded.")
         return
