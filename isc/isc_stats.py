@@ -11,22 +11,9 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
 import config
 from pipeline_utils import load_mask, load_data, save_map, save_plot, run_isc_computation, apply_cluster_threshold, apply_tfce
 from joblib import Parallel, delayed
+from brainiak.isc import bootstrap_isc
 
-def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, seed):
-    rng = np.random.RandomState(seed)
-    indices = rng.randint(0, n_samples, size=n_samples)
-    sample = data_centered[:, indices]
-    perm_mean = np.nanmean(sample, axis=1)
-    
-    if use_tfce:
-        # Apply TFCE to permuted map
-        perm_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
-        perm_mean_3d[mask_3d] = perm_mean
-        perm_mean_3d = apply_tfce(perm_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
-        # Return Max-Statistic for FWER correction
-        return np.max(np.abs(perm_mean_3d))
-    else:
-        return perm_mean
+
 
 def _run_phaseshift_iter(i, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
     n_subs = group_data.shape[2]
@@ -96,9 +83,9 @@ def run_ttest(data_4d):
     mean_map = np.nanmean(data_4d, axis=-1)
     return mean_map, p_values
 
-def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, mask_3d=None, tfce_E=0.5, tfce_H=2.0):
+def run_bootstrap_brainiak(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, mask_3d=None, tfce_E=0.5, tfce_H=2.0):
     """
-    Run bootstrap on 4D map (subjects dimension).
+    Run bootstrap using BrainIAK.
     
     Parameters:
     -----------
@@ -109,69 +96,124 @@ def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42, use_tfce=F
     random_state : int
         Random seed
     use_tfce : bool
-        If True, apply TFCE transformation before computing p-values
-    mask_3d : 3D array, optional
-        Brain mask for TFCE (required if use_tfce=True)
-    tfce_E : float
-        TFCE extent parameter
-    tfce_H : float
-        TFCE height parameter
+        If True, apply TFCE to the bootstrap distribution for FWER correction.
     """
-    print(f"Running Bootstrap (n={n_bootstraps})...")
-    n_voxels, n_samples = data_4d.shape
+    print(f"Running BrainIAK Bootstrap (n={n_bootstraps}, summary=median, side=right)...")
     
-    # Observed mean
-    observed_mean = np.nanmean(data_4d, axis=1)
+    # BrainIAK expects (n_samples, n_voxels) or (n_pairs, n_voxels)
+    # Our data_4d is (n_voxels, n_samples). We need to transpose.
+    data_reshaped = data_4d.T # (n_samples, n_voxels)
+    
+    # Run BrainIAK bootstrap
+    # Returns: observed, ci, p, distribution
+    observed, ci, p_values, distribution = bootstrap_isc(
+        data_reshaped, 
+        pairwise=False, 
+        summary_statistic='median', 
+        n_bootstraps=n_bootstraps, 
+        ci_percentile=95, 
+        side='right', 
+        random_state=random_state
+    )
+    
+    # observed: (n_voxels,) - Median ISC
+    # p_values: (n_voxels,) - Uncorrected p-values
+    # distribution: (n_bootstraps, n_voxels) - Bootstrap distribution of Medians
     
     if use_tfce:
         if mask_3d is None:
             raise ValueError("mask_3d is required when use_tfce=True")
-        # Reshape observed mean to 3D for TFCE
-        observed_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
-        observed_mean_3d[mask_3d] = observed_mean
-        observed_mean_3d = apply_tfce(observed_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
-        observed_mean = observed_mean_3d[mask_3d]
-    
-    # Center data
-    data_centered = data_4d - np.nanmean(data_4d, axis=1, keepdims=True)
-    
-    # Parallelize
-    results = Parallel(n_jobs=-1, verbose=5)(
-        delayed(_run_bootstrap_iter)(
-            i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, random_state + i
-        ) for i in range(n_bootstraps)
-    )
-    
-    if use_tfce:
-        # Results are list of max-stats (one per bootstrap)
-        null_max_stats = np.array(results) # (n_bootstraps,)
-        # FWER P-value: Proportion of null_max >= observed_val[voxel]
-        # Compare each voxel's observed val against the ONE null distribution of max stats
-        # Broadcasting: observed_mean[:, None] (V, 1) vs null_max_stats[None, :] (1, B)
-        # But actually simpler: we just need counts.
-        # sort null_max_stats for faster lookup? Or just broadcast.
-        
-        # P = (sum(null_max >= obs_val) + 1) / (B + 1)
-        # using broadcasting
-        with np.errstate(invalid='ignore'):
-            # observed_mean is (V,), null_max_stats is (B,)
-            # We want for each voxel, how many null_max are >= abs(obs[v])
-            # This can be memory intensive if V and B are large.
-            # (V, B) bool array.
-            # If V=200k, B=1000, that's 200MB bool array. Totally fine.
-            p_values = np.mean(null_max_stats[np.newaxis, :] >= np.abs(observed_mean[:, np.newaxis]), axis=1)
-            # Add +1 correction logic if desired, or simpler mean. 
-            # (Sum + 1) / (N + 1)
-            p_values = (np.sum(null_max_stats[np.newaxis, :] >= np.abs(observed_mean[:, np.newaxis]), axis=1) + 1) / (n_bootstraps + 1)
             
-    else:
-        # Results are list of arrays (n_voxels,)
-        null_means = np.array(results).T # (n_voxels, n_bootstraps)
+        print("Computing TFCE correction on bootstrap distribution...")
         
-        with np.errstate(invalid='ignore'):
-             p_values = np.sum(np.abs(null_means) >= np.abs(observed_mean[:, np.newaxis]), axis=1) / (n_bootstraps + 1)
-    
-    return observed_mean, p_values
+        # 1. Shift distribution to Null Hypothesis (Shift-to-Null)
+        # BrainIAK does this internally for p-values, but returns the raw bootstrap distribution.
+        # Null = Bootstrap - Observed (so the new median is 0)
+        # We need to broadcast observed across the distribution
+        null_distribution = distribution - observed[np.newaxis, :]
+        
+        # 2. Compute Max-TFCE for each bootstrap iteration
+        n_boots = null_distribution.shape[0]
+        max_tfce_stats = np.zeros(n_boots)
+        
+        # We can parallelize this step since it's just processing the distribution
+        # Define helper for parallel TFCE
+        def _compute_max_tfce(boot_idx, boot_map_flat, mask_3d, E, H):
+            boot_map_3d = np.zeros(mask_3d.shape, dtype=np.float32)
+            boot_map_3d[mask_3d] = boot_map_flat
+            
+            # Apply TFCE (two-sided because null distribution is symmetric around 0 after shift)
+            # Even though we do a one-sided test, TFCE magnitude matters.
+            # However, for a one-sided test (right), we might only care about positive TFCE?
+            # Standard FWER for one-sided: Check if Observed TFCE > Max Null TFCE.
+            # The Null distribution should be treated as it is. 
+            
+            tfce_map = apply_tfce(boot_map_3d, mask_3d, E=E, H=H, two_sided=True)
+            return np.max(tfce_map) # Max statistic
+
+        # Run parallel TFCE on the null distribution
+        max_tfce_stats = Parallel(n_jobs=-1, verbose=5)(
+            delayed(_compute_max_tfce)(i, null_distribution[i, :], mask_3d, tfce_E, tfce_H)
+            for i in range(n_boots)
+        )
+        max_tfce_stats = np.array(max_tfce_stats)
+        
+        # 3. Compute Observed TFCE
+        # We need to compute TFCE on the observed MEDIAN map
+        obs_map_3d = np.zeros(mask_3d.shape, dtype=np.float32)
+        obs_map_3d[mask_3d] = observed
+        
+        # For Right-Tailed test, we typically only care about positive clusters.
+        # But 'two_sided=True' in apply_tfce usually takes abs() or handles both tails.
+        # Given we want to test "Significant Positive ISC", we should look at the positive tail.
+        # The apply_tfce implementation (from previous turns) likely handles sign or abs.
+        # Let's trust apply_tfce(two_sided=True) gives meaningful magnitude or we can check.
+        # If two_sided=True, it usually enhances positive and negative clusters separately and combines max.
+        
+        obs_tfce_3d = apply_tfce(obs_map_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
+        obs_tfce_flat = obs_tfce_3d[mask_3d]
+        
+        # 4. Compute Corrected P-values
+        # P = (sum(Max_Null >= Observed) + 1) / (N + 1)
+        # Note: Since it's a right-tailed test, we compare Obs_TFCE vs Max_Null_TFCE
+        # (Assuming Max_Null_TFCE represents the max enhancement expected by chance)
+        
+        # Broadcast for comparison: (V,) vs (B,)
+        # count how many times max_random_tfce >= obs_tfce
+        
+        p_values_corrected = np.zeros_like(observed)
+        
+        # Using the same logic as before (broadcasting or loop)
+        # We want p-value for each voxel
+        # For a voxel v with TFCE val X: how many perm's MAX statistic is >= X?
+        
+        # obs_tfce_flat: (V,)
+        # max_tfce_stats: (B,)
+        
+        # p_val[v] = sum(max_tfce_stats >= obs_tfce_flat[v]) / (B+1)
+        
+        # This is strictly right-tailed FWER (Probability that max noise > observed signal)
+        
+        # Optimization: Sort max stats
+        sorted_max_stats = np.sort(max_tfce_stats)
+        # searchsorted returns index where value would be inserted to maintain order
+        # We want count of values >= obs
+        # index = searchsorted(sorted, obs)
+        # count >= obs  is  N - index
+        
+        # searchsorted convention: side='left' (default) finds first index >= val
+        indices = np.searchsorted(sorted_max_stats, obs_tfce_flat, side='left')
+        count_greater = n_boots - indices
+        p_values_corrected = (count_greater + 1) / (n_boots + 1)
+        
+        # Return both observed median and the corrected p-values
+        # Note: we return 'observed' (median) map, but the p-values correspond to the TFCE test.
+        # The user's code expects (mean_map, p_values). We return (median_map, p_values).
+        return observed, p_values_corrected
+
+    else:
+        # If no TFCE, just return the brainiak p-values
+        return observed, p_values
 
 
 
@@ -311,7 +353,7 @@ def main():
                 print("Warning: TFCE requires permutation/bootstrap. T-test does not support TFCE. Ignoring --use_tfce.")
             mean_vals, p_values = run_ttest(masked_data)
         elif method == 'bootstrap':
-            mean_vals, p_values = run_bootstrap_manual(
+            mean_vals, p_values = run_bootstrap_brainiak(
                 masked_data, n_bootstraps=args.n_perms, 
                 use_tfce=args.use_tfce, mask_3d=mask_data, 
                 tfce_E=args.tfce_E, tfce_H=args.tfce_H
