@@ -41,6 +41,7 @@ for lines in `cat $params_txt_file`; do
     p_from_file=`echo $line | cut -d' ' -f5`
     tfce_flag=`echo $line | cut -d' ' -f6`
 
+
     # if [ -n "$p_from_file" ]; then
     #     pval="$p_from_file"
     # else
@@ -49,17 +50,22 @@ for lines in `cat $params_txt_file`; do
     
     params=`echo "--condition ${condition} --isc_method ${isc_method} --stats_method ${stats_method} --n_perms ${n_perms} --p_threshold ${p_from_file}"`
 
+    output_dir_thisrun="$output_dir"
+
     if [ "$tfce_flag" = "use_tfce" ]; then
         params="${params} --use_tfce"
+        output_dir_thisrun="${output_dir}_thresholded"
     fi
+
+    echo "${output_dir_thisrun}_${condition}"
 
     echo '#!/bin/bash' > TI_isc.sbatch;
     echo "bash 01_run_temporal_integration_isc.sh \
     \"${code_dir}\" \
     \"${params}\" \
     \"${data_dir}\" \
-    \"${output_dir}_${p_from_file}\" \
+    \"${output_dir_thisrun}_${condition}\" \
     \"${p_from_file}\"" >> TI_isc.sbatch
-    sbatch -p menon -c 16 --mem=${mem}G -t 10:00:00 -o "${output_dir}/temporal_integration_${condition}_${p_from_file}_${tfce_flag}_log.txt" TI_isc.sbatch;
+    sbatch -p menon -c 16 --mem=${mem}G -t 10:00:00 -o "${output_dir_thisrun}_${condition}/temporal_integration_${condition}_${p_from_file}_${tfce_flag}_%j.log" TI_isc.sbatch;
     rm TI_isc.sbatch;
 done

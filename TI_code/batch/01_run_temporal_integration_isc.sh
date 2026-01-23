@@ -78,7 +78,7 @@ printf "  %q\n" "${PARAM_ARR[@]}"
 ${env_path}/bin/python ${code_path}/run_isc_pipeline.py \
 ${param_string} \
  "--data_dir" ${data_dir} \
- "--output_dir" ${output_dir}_${thresh} \
+ "--output_dir" ${output_dir} \
  "--mask_file" ${mask_file}
  
 #   param_string="--condition TI1_sent --isc_method loo --stats_method phaseshift --n_perms 1000";p_threshold=0.05; data_dir=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf;  output_dir=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf/isc_analysis_1000_permutations_hpc;env_path=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/isc_env;mask_file="/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/mask/MNI152_T1_2mm_brain_mask.nii";

@@ -85,7 +85,6 @@ def load_data(condition, subjects, mask, data_dir):
             raise ValueError(f"Voxel count mismatch for {sub}: got {masked_data.shape[1]} expected {int(mask.sum())}")
 
         data_list.append(masked_data)
-
     if not data_list:
         return None
 
@@ -218,6 +217,9 @@ def save_plot(nifti_path, output_image_path, title, dpi=300, transparent=True, p
     Generate and save a static plot of a nifti map.
     """
     print(f"Generating plot to {output_image_path}")
+    import matplotlib.pyplot as plt
+    print("savefig:", plt.savefig, getattr(plt.savefig, "__module__", None))
+
     # Note: plot_stat_map works best with 3D images. 
     # If 4D is passed, we might need to mean it or pick first volume, 
     # but usually this function is called on summary maps (mean/p-value) which are 3D.
@@ -245,8 +247,17 @@ def save_plot(nifti_path, output_image_path, title, dpi=300, transparent=True, p
             symmetric_cbar=symmetric_cbar,
             cmap=cmap
         )
-        display.savefig(output_image_path, dpi=dpi, transparent=transparent)
+        try:
+            display.savefig(output_image_path, dpi=dpi, transparent=transparent)
+        except TypeError as e:
+            msg = str(e)
+            if "transparent" in msg and "unexpected keyword" in msg:
+                display.savefig(output_image_path, dpi=dpi)
+            else:
+                raise
+
         display.close()
+
     except Exception as e:
         print(f"Failed to generate plot: {e}")
 

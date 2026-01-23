@@ -122,9 +122,7 @@ def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42, use_tfce=F
         TFCE height parameter
     """
     print(f"Running Bootstrap (n={n_bootstraps})...")
-    n_voxels, n_samples = data_4d.shape
-        n_voxels, n_samples = data_4d.shape
-    
+    n_voxels, n_samples = data_4d.shape    
     # Observed mean
     observed_mean = np.nanmean(data_4d, axis=1)
     

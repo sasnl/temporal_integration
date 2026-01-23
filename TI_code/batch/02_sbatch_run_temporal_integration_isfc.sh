@@ -45,7 +45,6 @@ cd /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/ta
 
 for lines in `cat $params_txt_file`; do
     line=`echo $lines | tr ',' ' '`;
-
     condition=`echo $line | cut -d' ' -f1`;
     isfc_method=`echo $line | cut -d' ' -f2`;
     stats_method=`echo $line | cut -d' ' -f3`;
@@ -59,18 +58,22 @@ for lines in `cat $params_txt_file`; do
     tfce_flag=`echo $line | cut -d' ' -f10`;
 
     params=`echo "--condition ${condition} --isfc_method ${isfc_method} --stats_method ${stats_method} --seed_x ${seed_x} --seed_y ${seed_y} --seed_z ${seed_z} --seed_radius ${seed_radius} --n_perms ${n_perms} --p_threshold ${p_from_file}"`
+    output_dir_thisrun="$output_dir"
 
     if [ "$tfce_flag" = "use_tfce" ]; then
         params="${params} --use_tfce"
+        output_dir_thisrun="${output_dir}_thresholded"
     fi
+
+    echo "${output_dir_thisrun}_${condition}"
 
     echo '#!/bin/bash' > TI_isfc.sbatch;
     echo "bash 01_run_temporal_integration_isfc.sh \
     \"${code_dir}\" \
     \"${params}\" \
     \"${data_dir}\" \
-    \"${output_dir}_${p_from_file}\" \
+    \"${output_dir_thisrun}_${condition}\" \
     \"${p_from_file}\"" >> TI_isfc.sbatch
-    sbatch -p menon -c 16 --mem=${mem}G -t 10:00:00 -o "${output_dir}/temporal_integration_${condition}_seed_${seed_x}_${seed_y}_${seed_z}_${p_from_file}_${tfce_flag}_log.txt" TI_isfc.sbatch;
+    sbatch -p menon -c 16 --mem=${mem}G -t 10:00:00 -o "${output_dir_thisrun}_${condition}/temporal_integration_${condition}_seed_${seed_x}_${seed_y}_${seed_z}_${p_from_file}_${tfce_flag}_%j.log" TI_isfc.sbatch;
     rm TI_isfc.sbatch;
 done
