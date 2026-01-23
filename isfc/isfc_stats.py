@@ -12,22 +12,9 @@ from pipeline_utils import load_mask, load_data, save_map, save_plot, get_seed_m
 from isfc_compute import run_isfc_computation 
 # Import run_isfc_computation to reuse logic for phase shift re-computation
 import config
+from brainiak.isc import bootstrap_isc
 
-def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, seed):
-    rng = np.random.RandomState(seed)
-    indices = rng.randint(0, n_samples, size=n_samples)
-    sample = data_centered[:, indices]
-    perm_mean = np.nanmean(sample, axis=1)
-    
-    if use_tfce:
-        # Apply TFCE to permuted map
-        perm_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
-        perm_mean_3d[mask_3d] = perm_mean
-        perm_mean_3d = apply_tfce(perm_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
-        # Return Max-Statistic for FWER correction
-        return np.max(np.abs(perm_mean_3d))
-    else:
-        return perm_mean
+
 
 def _run_phaseshift_iter(i, obs_seed_ts, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
     # Generate surrogate seed by phase randomizing the OBSERVED seed
@@ -68,6 +55,8 @@ def parse_args():
                         help='TFCE extent parameter (default: 0.5)')
     parser.add_argument('--tfce_H', type=float, default=2.0,
                         help='TFCE height parameter (default: 2.0)')
+    parser.add_argument('--fwe_method', type=str, choices=['none', 'max_stat', 'bonferroni'], default='none',
+                        help='Family-Wise Error correction method for non-TFCE stats. Choices: "none", "max_stat", "bonferroni". Default: "none".')
     parser.add_argument('--seed_x', type=float, help='Seed X (Required for Phase Shift)')
     parser.add_argument('--seed_y', type=float, help='Seed Y (Required for Phase Shift)')
     parser.add_argument('--seed_z', type=float, help='Seed Z (Required for Phase Shift)')
@@ -95,9 +84,9 @@ def run_ttest(data_4d):
     
     return mean_map, p_values
 
-def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, mask_3d=None, tfce_E=0.5, tfce_H=2.0):
+def run_bootstrap_brainiak(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, mask_3d=None, tfce_E=0.5, tfce_H=2.0, fwe_method='none'):
     """
-    Run bootstrap on 4D map (subjects dimension).
+    Run bootstrap using BrainIAK.
     
     Parameters:
     -----------
@@ -108,48 +97,95 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
     random_state : int
         Random seed
     use_tfce : bool
-        If True, apply TFCE transformation before computing p-values
-    mask_3d : 3D array, optional
-        Brain mask for TFCE (required if use_tfce=True)
-    tfce_E : float
-        TFCE extent parameter
-    tfce_H : float
-        TFCE height parameter
+        If True, apply TFCE to the bootstrap distribution for FWER correction.
+    fwe_method : str
+        'none', 'max_stat', or 'bonferroni'. Used if use_tfce is False.
     """
-    print(f"Running Bootstrap (n={n_bootstraps})...")
-    n_voxels, n_samples = data_4d.shape
-
-    observed_mean = np.nanmean(data_4d, axis=1) # (V,)
+    print(f"Running BrainIAK Bootstrap (n={n_bootstraps}, summary=median, side=right)...")
+    if use_tfce:
+        print("Note: TFCE implies FWER correction via Max-TFCE. Ignoring --fwe_method arguments.")
+    elif fwe_method != 'none':
+        print(f"Applying FWER correction method: {fwe_method}")
+    
+    # BrainIAK expects (n_samples, n_voxels)
+    data_reshaped = data_4d.T # (n_samples, n_voxels)
+    
+    # Run BrainIAK bootstrap
+    # Returns: observed, ci, p, distribution
+    observed, ci, p_values, distribution = bootstrap_isc(
+        data_reshaped, 
+        pairwise=False, 
+        summary_statistic='median', 
+        n_bootstraps=n_bootstraps, 
+        ci_percentile=95, 
+        side='right', 
+        random_state=random_state
+    )
     
     if use_tfce:
         if mask_3d is None:
             raise ValueError("mask_3d is required when use_tfce=True")
-        # Reshape observed mean to 3D for TFCE
-        observed_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
-        observed_mean_3d[mask_3d] = observed_mean
-        observed_mean_3d = apply_tfce(observed_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
-        observed_mean = observed_mean_3d[mask_3d]
-    
-    data_centered = data_4d - np.nanmean(data_4d, axis=1, keepdims=True)
-    
-    # Parallelize
-    results = Parallel(n_jobs=-1, verbose=5)(
-        delayed(_run_bootstrap_iter)(
-            i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, random_state + i
-        ) for i in range(n_bootstraps)
-    )
-    
-    if use_tfce:
-        # FWER Correction
-        null_max_stats = np.array(results) 
-        p_values = (np.sum(null_max_stats[np.newaxis, :] >= np.abs(observed_mean[:, np.newaxis]), axis=1) + 1) / (n_bootstraps + 1)
+            
+        print("Computing TFCE correction on bootstrap distribution...")
+        
+        # 1. Shift to Null
+        null_distribution = distribution - observed[np.newaxis, :]
+        
+        # 2. Compute Max-TFCE parallel
+        n_boots = null_distribution.shape[0]
+        
+        def _compute_max_tfce(boot_idx, boot_map_flat, mask_3d, E, H):
+            boot_map_3d = np.zeros(mask_3d.shape, dtype=np.float32)
+            boot_map_3d[mask_3d] = boot_map_flat
+            tfce_map = apply_tfce(boot_map_3d, mask_3d, E=E, H=H, two_sided=True)
+            return np.max(tfce_map)
+
+        max_tfce_stats = Parallel(n_jobs=-1, verbose=5)(
+            delayed(_compute_max_tfce)(i, null_distribution[i, :], mask_3d, tfce_E, tfce_H)
+            for i in range(n_boots)
+        )
+        max_tfce_stats = np.array(max_tfce_stats)
+        
+        # 3. Observed TFCE
+        obs_map_3d = np.zeros(mask_3d.shape, dtype=np.float32)
+        obs_map_3d[mask_3d] = observed
+        obs_tfce_3d = apply_tfce(obs_map_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
+        obs_tfce_flat = obs_tfce_3d[mask_3d]
+        
+        # 4. Corrected P-values
+        sorted_max_stats = np.sort(max_tfce_stats)
+        indices = np.searchsorted(sorted_max_stats, obs_tfce_flat, side='left')
+        count_greater = n_boots - indices
+        p_values_corrected = (count_greater + 1) / (n_boots + 1)
+        
+        return obs_tfce_flat, p_values_corrected, p_values
+
     else:
-        # Voxel-wise
-        null_means = np.array(results).T
-        with np.errstate(invalid='ignore'):
-             p_values = np.sum(np.abs(null_means) >= np.abs(observed_mean[:, np.newaxis]), axis=1) / (n_bootstraps + 1)
-    
-    return observed_mean, p_values
+        # No TFCE
+        corrected_p = p_values
+        uncorrected_p = p_values
+        
+        if fwe_method == 'max_stat':
+            print("Computing Max-Statistic FWER correction...")
+            null_distribution = distribution - observed[np.newaxis, :]
+            max_stats = np.max(null_distribution, axis=1) # (n_boots,)
+            
+            sorted_max_stats = np.sort(max_stats)
+            indices = np.searchsorted(sorted_max_stats, observed, side='left')
+            count_greater = n_boots - indices
+            p_values_corrected = (count_greater + 1) / (n_bootstraps + 1)
+            
+            return observed, p_values_corrected, uncorrected_p
+            
+        elif fwe_method == 'bonferroni':
+            print("Applying Bonferroni correction...")
+            n_voxels = observed.shape[0]
+            p_corrected = p_values * n_voxels
+            p_corrected[p_corrected > 1] = 1.0
+            return observed, p_corrected, uncorrected_p
+            
+        else:
+            return observed, corrected_p, uncorrected_p
 
 
 def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE, seed_file=None, use_tfce=False, tfce_E=0.5, tfce_H=2.0):
@@ -250,6 +286,8 @@ def main():
     mask_data = None
     mean_map = None
     p_values = None
+    p_uncorrected = None
+    p_uncorrected_3d = None
     
     if args.roi_id is not None: 
          mask_data, mask_affine = load_mask(mask_file, roi_id=args.roi_id)
@@ -306,10 +344,11 @@ def main():
                 print("Warning: TFCE requires permutation/bootstrap. T-test does not support TFCE. Ignoring --use_tfce.")
             mean_vals, p_vals_vec = run_ttest(masked_data)
         elif method == 'bootstrap':
-            mean_vals, p_vals_vec = run_bootstrap(
+            mean_vals, p_vals_vec, p_uncorrected = run_bootstrap_brainiak(
                 masked_data, n_bootstraps=args.n_perms,
                 use_tfce=args.use_tfce, mask_3d=mask_data,
-                tfce_E=args.tfce_E, tfce_H=args.tfce_H
+                tfce_E=args.tfce_E, tfce_H=args.tfce_H,
+                fwe_method=args.fwe_method
             )
             
         # Reconstruct maps
@@ -319,6 +358,10 @@ def main():
         p_values = np.ones(mask_data.shape, dtype=np.float32)
         p_values[mask_data] = p_vals_vec
         
+        if method == 'bootstrap':
+            p_uncorrected_3d = np.ones(mask_data.shape, dtype=np.float32)
+            p_uncorrected_3d[mask_data] = p_uncorrected
+        
         input_base = os.path.basename(args.input_map).replace('.nii.gz', '').replace('_desc-zscore', '').replace('_desc-raw', '')
         base_name = f"{input_base}_{method}"
     
@@ -326,6 +369,10 @@ def main():
     tfce_suffix = "_tfce" if args.use_tfce else ""
     if tfce_suffix:
         base_name += tfce_suffix
+        
+    # FWER suffix
+    if args.fwe_method != 'none' and not args.use_tfce:
+        base_name += f"_{args.fwe_method}"
     
     # Check incompatibility
     if args.use_tfce and args.cluster_threshold > 0:
@@ -343,6 +390,11 @@ def main():
     # 1b. P-values
     p_path = os.path.join(output_dir, f"{base_name}_desc-pvalues.nii.gz")
     save_map(p_values, mask_data, mask_affine, p_path)
+    
+    # 1c. Uncorrected P-values
+    if p_uncorrected_3d is not None:
+        p_unc_path = os.path.join(output_dir, f"{base_name}_desc-pvalues_uncorrected.nii.gz")
+        save_map(p_uncorrected_3d, mask_data, mask_affine, p_unc_path)
     
     # 2. Significant Map
     sig_map = mean_map.copy()

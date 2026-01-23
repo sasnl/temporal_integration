@@ -68,7 +68,9 @@ python isc/run_isc_pipeline.py --condition TI1_orig --isc_method loo --stats_met
 - `--use_tfce`: Use Threshold-Free Cluster Enhancement (TFCE). Requires `bootstrap` or `phaseshift`.
 - `--tfce_E`, `--tfce_H`: TFCE parameters (default: E=0.5, H=2.0).
 > **Note**: TFCE and Cluster Threshold are mutually exclusive. TFCE is not available for T-tests.
-> **Correction**: When TFCE is used, p-values are automatically FWER-corrected (Family-Wise Error Rate) using the Max-Statistic method.
+> **Correction**: When TFCE is used, p-values are automatically FWER-corrected. For non-TFCE bootstrap, use `--fwe_method max_stat`.
+
+- `--fwe_method`: Correction method for non-TFCE bootstrap. Choices: `none` (default), `max_stat` (Recommended, Max-Statistic), `bonferroni`.
 
 **Path Arguments (Optional overrides):**
 - `--data_dir`: Path to input data directory (overrides `config.py`).
@@ -94,7 +96,8 @@ python isfc/run_isfc_pipeline.py --condition TI1_orig --stats_method phaseshift 
 - `--cluster_threshold`: Minimum cluster size (voxels).
 - `--use_tfce`: Use TFCE (requires `bootstrap` or `phaseshift`).
 - `--tfce_E`, `--tfce_H`: TFCE parameters.
-> **Note**: TFCE uses FWER correction (Max-Statistic).
+> **Note**: TFCE uses FWER correction (Max-Statistic). For non-TFCE bootstrap, use `--fwe_method max_stat`.
+- `--fwe_method`: Correction method for non-TFCE bootstrap. Choices: `none` (default), `max_stat` (Recommended), `bonferroni`.
 
 **Path Arguments:**
 - `--data_dir`, `--output_dir`, `--mask_file`: Override `config.py` defaults.
@@ -147,4 +150,5 @@ Results are saved to `OUTPUT_DIR` (as defined in `config.py` or arguments) with 
 
 - **ISC Maps**: `isc_{condition}_{method}_desc-zscore.nii.gz`
 - **Significance Maps**: `..._desc-sig_p005.nii.gz`
+- **Correction Maps**: `..._desc-pvalues.nii.gz` (Corrected), `..._desc-pvalues_uncorrected.nii.gz` (Uncorrected)
 - **Plots**: `..._desc-sig.png` (300 DPI, transparent background, positive values only, 'hot' colormap)
