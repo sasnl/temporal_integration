@@ -268,7 +268,7 @@ def compute_isc_chunk(chunk_data, pairwise):
     # isc() returns shape (n_subjects, n_voxels) for pairwise=False (LOO)
     # isc() returns shape (n_pairs, n_voxels) for pairwise=True
     # Note: brainiak.isc.isc default is pairwise=False (Leave-one-out)
-    raw_isc = isc(chunk_data, pairwise=pairwise, summary_statistic=None) #DE updated to add summary stats= None so that we get a 2D output every time so shapes match assignment lines below
+    raw_isc = isc(chunk_data, pairwise=pairwise, summary_statistic=None,tolerate_nans=False) #DE updated to add summary stats= None so that we get a 2D output every time so shapes match assignment lines below
     #DE added line to force into 2 if 1D summary vector returned
     if raw_isc.ndim == 1:
         raw_isc = raw_isc[np.newaxis, :]

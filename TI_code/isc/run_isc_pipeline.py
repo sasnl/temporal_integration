@@ -90,7 +90,8 @@ def main():
     # Naming convention in isc_compute.py:
     # isc_{condition}_{method}{roi_suffix}_desc-zscore.nii.gz
     roi_suffix = f"_roi{args.roi_id}" if args.roi_id is not None else ""
-    output_dir = args.output_dir
+    output_dir = os.path.join(args.output_dir, args.condition)
+    os.makedirs(output_dir, exist_ok=True)
     z_map_file = os.path.join(output_dir, f"isc_{args.condition}_{args.isc_method}{roi_suffix}_desc-zscore.nii.gz")
     
     # 2. Run Step 2: Statistics

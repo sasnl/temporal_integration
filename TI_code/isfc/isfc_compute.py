@@ -6,9 +6,13 @@ from brainiak.isc import isfc
 from joblib import Parallel, delayed
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
-from pipeline_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data
-import config
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+TI_CODE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+if TI_CODE_DIR not in sys.path:
+    sys.path.insert(0, TI_CODE_DIR)
+
+from shared import config
+from shared.pipeline_utils import load_mask, load_data, save_map, save_plot,  get_seed_mask, load_seed_data
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Step 1: Compute ISFC Maps (Raw and Fisher-Z)')
@@ -71,7 +75,10 @@ def compute_isfc_chunk(target_chunk, seed_ts, pairwise):
     
     return isfc_raw, isfc_z
 
-def run_isfc_computation(data, seed_ts, pairwise=False, chunk_size=config.CHUNK_SIZE):
+def run_isfc_computation(data, seed_ts, pairwise=False, chunk_size=None):
+    if chunk_size is None:
+        chunk_size = getattr(config, "CHUNK_SIZE", 30000)
+
     """
     Run ISFC computation in parallel chunks.
     data: (TRs, Voxels, Subjects)

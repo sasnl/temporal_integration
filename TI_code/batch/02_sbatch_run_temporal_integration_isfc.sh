@@ -65,15 +65,18 @@ for lines in `cat $params_txt_file`; do
         output_dir_thisrun="${output_dir}_thresholded"
     fi
 
-    echo "${output_dir_thisrun}_${condition}"
-
     echo '#!/bin/bash' > TI_isfc.sbatch;
+    echo 'echo "SLURM_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK"' >> TI_isc.sbatch
+    echo 'export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}' >> TI_isc.sbatch
+    echo 'export OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}' >> TI_isc.sbatch
+    echo 'export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}' >> TI_isc.sbatch
+    echo 'export NUMEXPR_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}' >> TI_isc.sbatch
     echo "bash 01_run_temporal_integration_isfc.sh \
     \"${code_dir}\" \
     \"${params}\" \
     \"${data_dir}\" \
-    \"${output_dir_thisrun}_${condition}\" \
+    \"${output_dir_thisrun}\" \
     \"${p_from_file}\"" >> TI_isfc.sbatch
-    sbatch -p menon -c 16 --mem=${mem}G -t 10:00:00 -o "${output_dir_thisrun}_${condition}/temporal_integration_${condition}_seed_${seed_x}_${seed_y}_${seed_z}_${p_from_file}_${tfce_flag}_%j.log" TI_isfc.sbatch;
+    sbatch -p menon,owners -c 8 --mem=${mem}G -t 10:00:00 -o "${output_dir_thisrun}/temporal_integration_${condition}_seed_${seed_x}_${seed_y}_${seed_z}_${p_from_file}_${tfce_flag}_%j.log" TI_isfc.sbatch;
     rm TI_isfc.sbatch;
 done

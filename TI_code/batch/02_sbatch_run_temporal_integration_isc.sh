@@ -49,7 +49,6 @@ for lines in `cat $params_txt_file`; do
     # fi
     
     params=`echo "--condition ${condition} --isc_method ${isc_method} --stats_method ${stats_method} --n_perms ${n_perms} --p_threshold ${p_from_file}"`
-
     output_dir_thisrun="$output_dir"
 
     if [ "$tfce_flag" = "use_tfce" ]; then
@@ -57,15 +56,18 @@ for lines in `cat $params_txt_file`; do
         output_dir_thisrun="${output_dir}_thresholded"
     fi
 
-    echo "${output_dir_thisrun}_${condition}"
-
     echo '#!/bin/bash' > TI_isc.sbatch;
+    echo 'echo "SLURM_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK"' >> TI_isc.sbatch
+    echo 'export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}' >> TI_isc.sbatch
+    echo 'export OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}' >> TI_isc.sbatch
+    echo 'export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}' >> TI_isc.sbatch
+    echo 'export NUMEXPR_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}' >> TI_isc.sbatch
     echo "bash 01_run_temporal_integration_isc.sh \
     \"${code_dir}\" \
     \"${params}\" \
     \"${data_dir}\" \
-    \"${output_dir_thisrun}_${condition}\" \
+    \"${output_dir_thisrun}\" \
     \"${p_from_file}\"" >> TI_isc.sbatch
-    sbatch -p menon -c 16 --mem=${mem}G -t 10:00:00 -o "${output_dir_thisrun}_${condition}/temporal_integration_${condition}_${p_from_file}_${tfce_flag}_%j.log" TI_isc.sbatch;
+    sbatch -p menon,owners -c 8 --mem=${mem}G -t 10:00:00 -o "${output_dir_thisrun}/temporal_integration_${condition}_${p_from_file}_${tfce_flag}_%j.log" TI_isc.sbatch;
     rm TI_isc.sbatch;
 done

@@ -10,6 +10,15 @@
 #   Inter-Subject Correlation (ISC) analyses on Sherlock (SLURM),
 #   using the Temporal Integration codebase.
 #
+
+code_path=$1 #" /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isc
+param_string=$2 #row from isc_params_example.txt
+#"TI1_orig, TI1_sent, TI1_"
+data_dir=$3
+output_dir=$4
+thresh=$5
+
+
 usage() {
     echo ""
     echo "USAGE:"
@@ -36,18 +45,10 @@ usage() {
 }
 
 # ---- argument check ----
-if [ "$#" -ne 4 ]; then
+if [ "$#" -ne 5 ]; then
     echo "ERROR: Incorrect number of arguments."
     usage
 fi
-
-code_path=$1 #" /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isc
-param_string=$2 #row from isc_params_example.txt
-#"TI1_orig, TI1_sent, TI1_"
-data_dir=$3
-output_dir=$4
-thresh=$5
-
 
 env_path=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/isc_env
 mask_file="/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/mask/MNI152_T1_2mm_brain_mask.nii"

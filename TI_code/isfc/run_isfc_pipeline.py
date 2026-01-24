@@ -2,10 +2,13 @@ import argparse
 import subprocess
 import os
 import sys
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+TI_CODE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+if TI_CODE_DIR not in sys.path:
+    sys.path.insert(0, TI_CODE_DIR)
 
-# Add shared directory to path
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
-import config
+from shared import config
+print("USING CONFIG:", config.__file__, flush=True)
 
 def run_command(cmd):
     """Run a shell command and check for errors."""
@@ -117,7 +120,7 @@ def main():
          
     seed_suffix = f"_{seed_name}"
     base_name = f"isfc_{args.condition}_{args.isfc_method}{seed_suffix}{roi_suffix}"
-    output_dir = args.output_dir
+    output_dir = os.path.join(args.output_dir, seed_name)
     # Use Z-score map for T-test/Bootstrap
     input_map = os.path.join(output_dir, f"{base_name}_desc-zscore.nii.gz")
     

@@ -1,32 +1,30 @@
 import os
+import sys
 import argparse
 import numpy as np
 import nibabel as nib
 from scipy.stats import ttest_1samp
 from brainiak.utils.utils import phase_randomize
 from joblib import Parallel, delayed
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
-from pipeline_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data, apply_cluster_threshold, apply_tfce
-from isfc_compute import run_isfc_computation 
-# Import run_isfc_computation to reuse logic for phase shift re-computation
-import config
 
-import os
-import argparse
-import numpy as np
-import nibabel as nib
-from scipy.stats import ttest_1samp
-from brainiak.utils.utils import phase_randomize
-from joblib import Parallel, delayed
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
-from pipeline_utils import load_mask, load_data, save_map, save_plot, get_seed_mask, load_seed_data, apply_cluster_threshold, apply_tfce
-from isfc_compute import run_isfc_computation 
-# Import run_isfc_computation to reuse logic for phase shift re-computation
-import config
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+TI_CODE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+if TI_CODE_DIR not in sys.path:
+    sys.path.insert(0, TI_CODE_DIR)
+
+from shared import config as shared_config
+from shared.pipeline_utils import (
+    load_mask,
+    load_data,
+    save_map,
+    save_plot,
+    get_seed_mask,
+    load_seed_data,
+    apply_cluster_threshold,
+    apply_tfce,
+)
+from isfc_compute import run_isfc_computation
+import config as local_config
 
 def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, seed):
     rng = np.random.RandomState(seed)
@@ -96,7 +94,7 @@ def parse_args():
                         help=f'Output directory (default: {config.OUTPUT_DIR})')
     parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
                         help=f'Path to mask file (default: {config.MASK_FILE})')
-    parser.add_argument('--chunk_size', type=int, default=config.CHUNK_SIZE,
+    parser.add_argument('--chunk_size', type=int, default=300000,
                         help=f'Chunk size (default: {config.CHUNK_SIZE})')
     return parser.parse_args()
 
@@ -167,7 +165,7 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
     return observed_mean, p_values
 
 
-def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE, seed_file=None, use_tfce=False, tfce_E=0.5, tfce_H=2.0):
+def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file, chunk_size=300000,seed_file=None, use_tfce=False, tfce_E=0.5, tfce_H=2.0):
     """
     Run Phase Shift randomization.
     
