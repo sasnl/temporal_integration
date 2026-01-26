@@ -42,7 +42,9 @@ def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, 
 
 
 
-def _run_phaseshift_iter(i, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
+def _run_phaseshift_iter(i, n_perms, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
+    if (i+1) % 10 == 0 or i == 0:
+        print(f"Starting permutation {i+1} out of {n_perms}", flush=True)
     n_subs = group_data.shape[2]
     rng = np.random.RandomState(seed)
     
@@ -261,9 +263,10 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=c
         obs_mean = obs_mean_3d[mask]
     
     # 2. Phase Randomization (Parallel)
+    print(f"  Starting {n_perms} permutations...")
     results = Parallel(n_jobs=-1, verbose=5)(
         delayed(_run_phaseshift_iter)(
-            i, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i
+            i, n_perms, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i
         ) for i in range(n_perms)
     )
 

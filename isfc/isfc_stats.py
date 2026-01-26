@@ -43,7 +43,9 @@ def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, 
 
 
 
-def _run_phaseshift_iter(i, obs_seed_ts, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
+def _run_phaseshift_iter(i, n_perms, obs_seed_ts, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
+    if (i+1) % 10 == 0 or i == 0:
+        print(f"Starting permutation {i+1} out of {n_perms}", flush=True)
     # Generate surrogate seed by phase randomizing the OBSERVED seed
     surr_seed_ts = phase_randomize(obs_seed_ts, voxelwise=False, random_state=seed)
     
@@ -269,9 +271,10 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
         obs_mean_z = obs_mean_z_3d[mask]
     
     # 2. Null Distribution (Parallel)
+    print(f"  Starting {n_perms} permutations...")
     results = Parallel(n_jobs=-1, verbose=5)(
         delayed(_run_phaseshift_iter)(
-            i, obs_seed_ts, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i
+            i, n_perms, obs_seed_ts, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i
         ) for i in range(n_perms)
     )
     
