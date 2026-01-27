@@ -12,6 +12,8 @@ if TI_CODE_DIR not in sys.path:
     sys.path.insert(0, TI_CODE_DIR)
 
 from shared import config
+print("USING CONFIG:", config.__file__, flush=True)
+
 from shared.pipeline_utils import load_mask, load_data, save_map, save_plot,  get_seed_mask, load_seed_data
 
 def parse_args():

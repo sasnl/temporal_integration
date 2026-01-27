@@ -33,6 +33,11 @@ def parse_args():
                         help='TFCE extent parameter (default: 0.5)')
     parser.add_argument('--tfce_H', type=float, default=2.0,
                         help='TFCE height parameter (default: 2.0)')
+    parser.add_argument("--checkpoint_every", type=int, default=25,
+                        help="Save phaseshift checkpoint every N permutations")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume phaseshift from existing checkpoint in output_dir")
+
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
@@ -41,7 +46,7 @@ def parse_args():
                         help=f'Output directory (default: {config.OUTPUT_DIR})')
     parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
                         help=f'Path to mask file (default: {config.MASK_FILE})')
-    parser.add_argument('--chunk_size', type=int, default=30000,
+    parser.add_argument('--chunk_size', type=int, default=300000,
                         help='Chunk size for processing (default: 300000)')
     return parser.parse_args()
 
@@ -112,12 +117,13 @@ def main():
         cmd_step2.extend(['--roi_id', str(args.roi_id)])
         
     if args.stats_method == 'phaseshift':
-        # Phase shift needs condition to reload data
         cmd_step2.extend(['--condition', args.condition])
+        cmd_step2.extend(['--checkpoint_every', str(args.checkpoint_every)])
+        if args.resume:
+            cmd_step2.append('--resume')
     else:
-        # Map-based methods need the input map
         cmd_step2.extend(['--input_map', z_map_file])
-        
+
     run_command(cmd_step2)
     
     print("\n=== PIPELINE COMPLETE ===")

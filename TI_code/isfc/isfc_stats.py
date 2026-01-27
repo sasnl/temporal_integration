@@ -12,7 +12,9 @@ TI_CODE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 if TI_CODE_DIR not in sys.path:
     sys.path.insert(0, TI_CODE_DIR)
 
-from shared import config as shared_config
+from shared import config
+print("USING CONFIG:", config.__file__, flush=True)
+
 from shared.pipeline_utils import (
     load_mask,
     load_data,
@@ -24,7 +26,6 @@ from shared.pipeline_utils import (
     apply_tfce,
 )
 from isfc_compute import run_isfc_computation
-import config as local_config
 
 def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, seed):
     rng = np.random.RandomState(seed)

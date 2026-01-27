@@ -291,16 +291,29 @@ def run_isc_computation(data, pairwise=False, chunk_size=config.CHUNK_SIZE):
     n_trs, n_voxels, n_subs = data.shape
     
     n_chunks = int(np.ceil(n_voxels / chunk_size))
-    chunks = []
-    for i in range(n_chunks):
-        start_idx = i * chunk_size
-        end_idx = min((i + 1) * chunk_size, n_voxels)
-        chunks.append(data[:, start_idx:end_idx, :])
+    def _chunk_iter():
+        for i in range(n_chunks):
+            start_idx = i * chunk_size
+            end_idx = min((i + 1) * chunk_size, n_voxels)
+            yield data[:, start_idx:end_idx, :]
+    # n_jobs = int(os.environ.get("SLURM_CPUS_PER_TASK", "1"))
+    results = Parallel(n_jobs=-1,verbose=5)(
+        delayed(compute_isc_chunk)(chunk, pairwise) for chunk in _chunk_iter())
 
-    # Parallel execution
-    results = Parallel(n_jobs=-1, verbose=5)(
-        delayed(compute_isc_chunk)(chunk, pairwise) for chunk in chunks
-    )
+
+    # results = Parallel(n_jobs=n_jobs,verbose=5, prefer="threads")(
+    #     delayed(compute_isc_chunk)(chunk, pairwise) for chunk in _chunk_iter())
+
+    # chunks = []
+    # for i in range(n_chunks):
+    #     start_idx = i * chunk_size
+    #     end_idx = min((i + 1) * chunk_size, n_voxels)
+    #     chunks.append(data[:, start_idx:end_idx, :])
+
+    # # Parallel execution
+    # results = Parallel(n_jobs=-1, verbose=5)(
+    #     delayed(compute_isc_chunk)(chunk, pairwise) for chunk in chunks
+    # )
     
     # Reassemble
     # Determine output shape from first result

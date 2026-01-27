@@ -53,7 +53,9 @@ fi
 env_path=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/isc_env
 mask_file="/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/mask/MNI152_T1_2mm_brain_mask.nii"
 
+ml miniconda
 source ${env_path}/bin/activate
+
 param_string="$(echo "$param_string" | tr '\n\t' ' ')"
 read -r -a PARAM_ARR <<< "$param_string"
 
