@@ -121,23 +121,43 @@ Perform paired statistical comparisons of **ISC or ISFC strength** between two c
 **Features:**
 - **Input**: Uses the computed ISC/ISFC Z-score maps from Step 1 (`_desc-zscore.nii.gz`). It analyzes the difference in correlation strength (`ISC_CondA - ISC_CondB`).
 - **Automated Subject Filtering**: Ensures subjects match across conditions and checks the `have_all_3` column in the subject list Excel file.
-- **Statistical Methods**: Paired T-Test, Sign Permutation (Robust), or Bootstrap on the difference maps.
+- **Statistical Methods**: Paired T-Test (Uncorrected), Sign Permutation (Robust), or Bootstrap on the difference maps.
 - **Correction**: Supports TFCE (recommended) or Cluster-based thresholding.
+- **NaN Handling**: Automatically handles `NaN` values in subject maps (e.g., partial coverage) using `nanmean`, ensuring valid group-level statistics.
 
-**Usage:**
+**1. Batch Execution (Recommended)**
+
+Run all 6 standard comparisons (Orig vs Sent, Orig vs Word, Sent vs Word; for both LOO and Pairwise methods) using:
 
 ```bash
-python shared/run_contrast.py --cond1 TI1_orig --cond2 TI1_sent --type isc --method sign_perm --n_perms 1000 --use_tfce
+# For TFCE-corrected Bootstrap
+./run_isc_contrast_commands.sh
+
+# For Uncorrected T-tests
+./run_isc_contrast_ttest.sh
+```
+
+**2. Manual Usage:**
+
+```bash
+python shared/run_contrast.py --cond1 TI1_orig --cond2 TI1_sent --type isc --isc_method loo --method bootstrap --n_perms 1000 --use_tfce
 ```
 
 **Key Arguments:**
 - `--cond1`, `--cond2`: Condition names to compare.
 - `--type`: `isc` or `isfc`.
-- `--method`: `sign_perm` (Recommended), `ttest`, or `bootstrap`.
+- `--isc_method`: `loo` or `pairwise` (Default: `loo`). Match this to your computed data.
+- `--method`: `bootstrap` (Recommended w/ TFCE), `sign_perm`, or `ttest` (Uncorrected).
 - `--seed_name`: (ISFC only) Seed identifier string matching your ISFC filenames (e.g., `seed-01_Left_HG`).
 - `--use_tfce`: Enable TFCE correction (for `sign_perm` or `bootstrap`).
 - `--p_threshold`: P-value threshold (default: 0.05).
 - `--subject_list_file`: Path to excel file (default: configured path).
+- `--exclude_result_organization`: Skip automatic result organization into subfolders.
+
+**Output Structure:**
+Results are saved to `result/ISC_contrast` and organized as:
+`result/ISC_contrast/{statistical_method}/{isc_method}/`
+Example: `result/ISC_contrast/bootstrap_tfce/loo/contrast_TI1_orig_vs_TI1_sent_isc_loo_bootstrap_tfce_desc-sig_p005.nii.gz`
 
 ### Target Seeds
 The following seeds are the primary targets for testing:
