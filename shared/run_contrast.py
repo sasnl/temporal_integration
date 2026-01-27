@@ -23,6 +23,7 @@ def parse_args():
     parser.add_argument('--seed_name', type=str, default='', help='Seed name string for ISFC file matching (e.g. seed-HG_L). Required if type=isfc.')
     parser.add_argument('--roi_id', type=int, default=None, help='ROI ID for masking')
     parser.add_argument('--n_perms', type=int, default=1000, help='Number of permutations/bootstraps')
+    parser.add_argument('--isc_method', type=str, choices=['loo', 'pairwise'], default='loo', help='ISC/ISFC Method (loo vs pairwise). Default: loo')
     
     parser.add_argument('--p_threshold', type=float, default=0.05, help='P-value threshold')
     parser.add_argument('--cluster_threshold', type=int, default=0, help='Cluster threshold (voxels)')
@@ -78,28 +79,23 @@ def load_subject_intersection(cond1, cond2, excel_path):
         
     return common_sorted, list1, list2
 
-def load_and_match_data(cond1, cond2, type_str, seed_name, common_subs, list1, list2, data_dir, roi_id):
+def load_and_match_data(cond1, cond2, type_str, isc_method, seed_name, common_subs, list1, list2, data_dir, roi_id):
     """
     Load 4D maps and extract matching subjects.
     Returns: data1, data2 (V, N_common), mask_data, mask_affine
     """
     # Construct Filenames
-    # Pattern: isc_{cond}_loo_desc-zscore.nii.gz  OR isfc_{cond}_loo_{seed}_desc-zscore.nii.gz
-    # Note: We assume 'loo' method for subject-level maps.
+    # Pattern: isc_{cond}_{method}_desc-zscore.nii.gz
     
     roi_suffix = f"_roi{roi_id}" if roi_id is not None else ""
     
     if type_str == 'isc':
-        f1 = f"isc_{cond1}_loo{roi_suffix}_desc-zscore.nii.gz"
-        f2 = f"isc_{cond2}_loo{roi_suffix}_desc-zscore.nii.gz"
+        f1 = f"isc_{cond1}_{isc_method}{roi_suffix}_desc-zscore.nii.gz"
+        f2 = f"isc_{cond2}_{isc_method}{roi_suffix}_desc-zscore.nii.gz"
     else:
-        # For ISFC, user must provide the seed string part correctly or we construct it?
-        # The user provides --seed_name. 
-        # Filename: isfc_{cond}_loo_{seed_name}{roi}_desc-zscore.nii.gz
-        # We need to be careful about underscores. 
-        # isfc_compute.py: f"isfc_{condition}_{method}_{seed_name}{roi_suffix}"
-        f1 = f"isfc_{cond1}_loo_{seed_name}{roi_suffix}_desc-zscore.nii.gz"
-        f2 = f"isfc_{cond2}_loo_{seed_name}{roi_suffix}_desc-zscore.nii.gz"
+        # ISFC
+        f1 = f"isfc_{cond1}_{isc_method}_{seed_name}{roi_suffix}_desc-zscore.nii.gz"
+        f2 = f"isfc_{cond2}_{isc_method}_{seed_name}{roi_suffix}_desc-zscore.nii.gz"
         
     p1 = os.path.join(data_dir, f1)
     p2 = os.path.join(data_dir, f2)
@@ -159,7 +155,7 @@ def _run_signperm_iter(i, diff_data, use_tfce, mask_3d, tfce_E, tfce_H, seed):
 def run_sign_permutation(diff_data, n_perms, mask_data, use_tfce, tfce_E, tfce_H):
     print(f"Running Sign Permutation (n={n_perms})...")
     
-    obs_mean = np.mean(diff_data, axis=1)
+    obs_mean = np.nanmean(diff_data, axis=1)
     
     if use_tfce:
          obs_mean_3d = np.zeros(mask_data.shape, dtype=np.float32)
@@ -223,7 +219,7 @@ def run_bootstrap_contrast(diff_data, n_perms, mask_data, use_tfce, tfce_E, tfce
     
     print(f"Running Bootstrap Test (n={n_perms})...")
     
-    obs_mean = np.mean(diff_data, axis=1)
+    obs_mean = np.nanmean(diff_data, axis=1)
     
     if use_tfce:
         obs_mean_3d = np.zeros(mask_data.shape, dtype=np.float32)
@@ -236,7 +232,7 @@ def run_bootstrap_contrast(diff_data, n_perms, mask_data, use_tfce, tfce_E, tfce
     # Center the data to enforce H0: mean=0
     # Center each subject? No, Center the group distribution.
     # New Data = Data - GrandMean. So Mean(New Data) = 0.
-    grand_mean = np.mean(diff_data, axis=1, keepdims=True)
+    grand_mean = np.nanmean(diff_data, axis=1, keepdims=True)
     null_data = diff_data - grand_mean
     
     results = Parallel(n_jobs=-1, verbose=5)(
@@ -265,7 +261,7 @@ def main():
     
     # 2. Load Data
     data1, data2, mask_data, mask_affine = load_and_match_data(
-        args.cond1, args.cond2, args.type, args.seed_name, 
+        args.cond1, args.cond2, args.type, args.isc_method, args.seed_name, 
         common_subs, list1, list2, args.data_dir, args.roi_id
     )
     
@@ -279,7 +275,7 @@ def main():
             print("Warning: T-test ignores TFCE.")
         print("Running Paired T-test...")
         t_stats, p_values = ttest_1samp(diff_data, popmean=0, axis=1, nan_policy='omit')
-        mean_map = np.mean(diff_data, axis=1) # Valid to save mean diff or T-stat? Usually save T-stat?
+        mean_map = np.nanmean(diff_data, axis=1) # Valid to save mean diff or T-stat? Usually save T-stat?
         # Let's save Mean Diff for consistency with "Contrast Magnitude"
         # But maybe T-stat is more informative?
         # Standard: Save "Stat" map. For t-test, it's T. For others, it's Mean/TFCE.
@@ -296,7 +292,7 @@ def main():
         )
         
     # 5. Save Outputs
-    base_name = f"contrast_{args.cond1}_vs_{args.cond2}_{args.type}"
+    base_name = f"contrast_{args.cond1}_vs_{args.cond2}_{args.type}_{args.isc_method}"
     if args.seed_name: base_name += f"_{args.seed_name}"
     base_name += f"_{args.method}"
     if args.roi_id: base_name += f"_roi{args.roi_id}"
