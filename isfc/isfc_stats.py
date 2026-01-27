@@ -14,7 +14,7 @@ from isfc_compute import run_isfc_computation
 import config
 # Removed brainiak.isc.bootstrap_isc import as we are implementing it manually for parallelization
 
-def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, seed):
+def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, tfce_dh, seed):
     """
     Helper function for parallel bootstrap iteration (Median).
     """
@@ -23,7 +23,7 @@ def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, 
     sample = data_centered[:, indices]
     
     # Compute Median for this bootstrap sample
-    perm_stat = np.median(sample, axis=1)
+    perm_stat = np.nanmedian(sample, axis=1)
     
     if use_tfce:
         # Apply TFCE to permuted map (relative to null)
@@ -31,7 +31,7 @@ def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, 
         perm_stat_3d[mask_3d] = perm_stat
         
         # TFCE on null distribution (two-sided usually captures magnitude)
-        perm_stat_3d = apply_tfce(perm_stat_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=False)
+        perm_stat_3d = apply_tfce(perm_stat_3d, mask_3d, E=tfce_E, H=tfce_H, dh=tfce_dh, two_sided=False)
         
         # Return Max-Statistic for FWER correction
         return np.max(np.abs(perm_stat_3d))
@@ -43,7 +43,7 @@ def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, 
 
 
 
-def _run_phaseshift_iter(i, n_perms, obs_seed_ts, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
+def _run_phaseshift_iter(i, n_perms, obs_seed_ts, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, tfce_dh, seed):
     if (i+1) % 10 == 0 or i == 0:
         print(f"Starting permutation {i+1} out of {n_perms}", flush=True)
     # Generate surrogate seed by phase randomizing the OBSERVED seed
@@ -56,7 +56,7 @@ def _run_phaseshift_iter(i, n_perms, obs_seed_ts, group_data, chunk_size, use_tf
         # FWER Correction: Return max statistic
         null_mean_3d = np.zeros(mask.shape, dtype=np.float32)
         null_mean_3d[mask] = null_mean
-        null_mean_3d = apply_tfce(null_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=False)
+        null_mean_3d = apply_tfce(null_mean_3d, mask, E=tfce_E, H=tfce_H, dh=tfce_dh, two_sided=False)
         return np.max(np.abs(null_mean_3d))
     else:
         return null_mean
@@ -84,8 +84,10 @@ def parse_args():
                         help='TFCE extent parameter (default: 0.5)')
     parser.add_argument('--tfce_H', type=float, default=2.0,
                         help='TFCE height parameter (default: 2.0)')
-    parser.add_argument('--fwe_method', type=str, choices=['none', 'max_stat', 'bonferroni'], default='none',
-                        help='Family-Wise Error correction method for non-TFCE stats. Choices: "none", "max_stat", "bonferroni". Default: "none".')
+    parser.add_argument('--tfce_dh', type=float, default=0.01,
+                        help='TFCE step size. Default: 0.01 (finer step for Z-scores)')
+    parser.add_argument('--fwe_method', type=str, choices=['none', 'max_stat', 'bonferroni', 'fdr'], default='none',
+                        help='Family-Wise Error correction method for non-TFCE stats. Choices: "none", "max_stat", "bonferroni", "fdr". Default: "none".')
     parser.add_argument('--seed_x', type=float, help='Seed X (Required for Phase Shift)')
     parser.add_argument('--seed_y', type=float, help='Seed Y (Required for Phase Shift)')
     parser.add_argument('--seed_z', type=float, help='Seed Z (Required for Phase Shift)')
@@ -101,6 +103,8 @@ def parse_args():
                         help=f'Path to mask file (default: {config.MASK_FILE})')
     parser.add_argument('--chunk_size', type=int, default=config.CHUNK_SIZE,
                         help=f'Chunk size (default: {config.CHUNK_SIZE})')
+    parser.add_argument('--save_permutations', action='store_true',
+                        help='Save all permutation maps to disk')
     return parser.parse_args()
 
 def run_ttest(data_4d):
@@ -113,7 +117,7 @@ def run_ttest(data_4d):
     
     return mean_map, p_values
 
-def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, mask_3d=None, tfce_E=0.5, tfce_H=2.0, fwe_method='none'):
+def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, mask_3d=None, tfce_E=0.5, tfce_H=2.0, tfce_dh=0.01, fwe_method='none', save_permutations=False):
     """
     Run bootstrap manually with parallelization (Joblib).
     Replaces run_bootstrap_brainiak for performance reasons.
@@ -141,19 +145,19 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
     
     # 1. Compute Observed Statistic (Median)
     # -------------------------------------
-    observed_check = np.median(data_4d, axis=1) # (V,)
+    observed_check = np.nanmedian(data_4d, axis=1) # (V,)
     
     # 2. Shift Data to Null Hypothesis
     # --------------------------------
     # Hall & Wilson (1991) Geometric shift: Center data so pop median is 0
     # Center each voxel's time series (samples) by subtracting its median
-    data_centered = data_4d - np.median(data_4d, axis=1, keepdims=True)
+    data_centered = data_4d - np.nanmedian(data_4d, axis=1, keepdims=True)
     
     # 3. Parallel Bootstrap Resampling
     # --------------------------------
     results = Parallel(n_jobs=-1, verbose=5)(
         delayed(_run_bootstrap_iter)(
-            i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, random_state + i
+            i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, tfce_dh, random_state + i
         ) for i in range(n_bootstraps)
     )
     
@@ -168,7 +172,7 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
         if mask_3d is None: raise ValueError("mask_3d required for TFCE")
         obs_map_3d = np.zeros(mask_3d.shape, dtype=np.float32)
         obs_map_3d[mask_3d] = observed_check
-        obs_tfce_3d = apply_tfce(obs_map_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=False)
+        obs_tfce_3d = apply_tfce(obs_map_3d, mask_3d, E=tfce_E, H=tfce_H, dh=tfce_dh, two_sided=False)
         obs_tfce_flat = obs_tfce_3d[mask_3d]
         
         # 3b. Null Max Stats
@@ -210,18 +214,41 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
             
             return observed_check, p_corrected, p_uncorrected
             
+
+            
+        elif fwe_method == 'fdr':
+            print("Applying FDR correction (Benjamini-Hochberg)...")
+            # Flatten for sorting
+            p_flat = p_uncorrected.flatten()
+            n_vals = p_flat.size
+            sorted_indices = np.argsort(p_flat)
+            sorted_p = p_flat[sorted_indices]
+            
+            ranks = np.arange(1, n_vals + 1)
+            q_vals = sorted_p * n_vals / ranks
+            
+            # Monotonicity
+            q_vals[-1] = min(q_vals[-1], 1.0)
+            for i in range(n_vals - 2, -1, -1):
+                q_vals[i] = min(q_vals[i], q_vals[i+1])
+                
+            p_corrected_flat = np.zeros_like(p_flat)
+            p_corrected_flat[sorted_indices] = q_vals
+            
+            return observed_check, p_corrected_flat, p_uncorrected
+
         elif fwe_method == 'bonferroni':
             print("Applying Bonferroni correction...")
             n_voxels = observed_check.shape[0]
             p_corrected = p_uncorrected * n_voxels
             p_corrected[p_corrected > 1] = 1.0
-            return observed_check, p_corrected, p_uncorrected
+            return observed_check, p_corrected, p_uncorrected, null_dist_maps if save_permutations else None
             
         else:
-            return observed_check, p_uncorrected, p_uncorrected
+            return observed_check, p_uncorrected, p_uncorrected, null_dist_maps if save_permutations else None
 
 
-def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE, seed_file=None, use_tfce=False, tfce_E=0.5, tfce_H=2.0):
+def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE, seed_file=None, use_tfce=False, tfce_E=0.5, tfce_H=2.0, tfce_dh=0.01, save_permutations=False):
     """
     Run Phase Shift randomization.
     
@@ -267,14 +294,14 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
         # Apply TFCE to observed map
         obs_mean_z_3d = np.zeros(mask.shape, dtype=np.float32)
         obs_mean_z_3d[mask] = obs_mean_z
-        obs_mean_z_3d = apply_tfce(obs_mean_z_3d, mask, E=tfce_E, H=tfce_H, two_sided=False)
+        obs_mean_z_3d = apply_tfce(obs_mean_z_3d, mask, E=tfce_E, H=tfce_H, dh=tfce_dh, two_sided=False)
         obs_mean_z = obs_mean_z_3d[mask]
     
     # 2. Null Distribution (Parallel)
     print(f"  Starting {n_perms} permutations...")
     results = Parallel(n_jobs=-1, verbose=5)(
         delayed(_run_phaseshift_iter)(
-            i, n_perms, obs_seed_ts, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i
+            i, n_perms, obs_seed_ts, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, tfce_dh, 1000 + i
         ) for i in range(n_perms)
     )
     
@@ -284,9 +311,24 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
         p_values = (np.sum(null_max_stats[np.newaxis, :] >= np.abs(obs_mean_z[:, np.newaxis]), axis=1) + 1) / (n_perms + 1)
     else:
          # Voxel-wise
-         null_means = np.array(results).T
+         null_means = np.array(results).T # (V, n_perms)
          count = np.sum(np.abs(null_means) >= np.abs(obs_mean_z[:, np.newaxis]), axis=1)
          p_values = (count + 1) / (n_perms + 1)
+    
+    # Check save_permutations
+    if save_permutations and not use_tfce:
+        # For ISFC phase shift, we usually have null_means available in 'results' (list of V arrays) or 'null_means'
+        # If use_tfce was True, results are max stats, not maps. So we can't save permutations for offline TFCE if we ran with TFCE.
+        # But if use_tfce is False (voxel-wise), we have the maps.
+        if 'null_means' in locals():
+            perm_maps = null_means
+        else:
+            # Reconstruct from results if needed (for tfce case it implies we didn't save maps, just max)
+            # Actually if use_tfce=True, 'results' contains floats, so we CANNOT save perm maps unless we modify _run_phaseshift_iter to return both.
+            # For now, only support saving if use_tfce=False.
+            perm_maps = np.array(results).T
+    else:
+        perm_maps = None
     
     # Convert back to 3D for return
     obs_mean_z_3d = np.zeros(mask.shape, dtype=np.float32)
@@ -295,7 +337,7 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
     p_values_3d = np.ones(mask.shape, dtype=np.float32)
     p_values_3d[mask] = p_values
     
-    return obs_mean_z_3d, p_values_3d, mask, affine
+    return obs_mean_z_3d, p_values_3d, mask, affine, perm_maps
 
 def main():
     args = parse_args()
@@ -343,11 +385,18 @@ def main():
         else:
              raise ValueError("Phaseshift requires --seed_file OR --seed_x/y/z")
              
-        mean_map, p_values, mask_data, mask_affine = run_phaseshift(
+        res = run_phaseshift(
             args.condition, args.roi_id, seed_coords, args.seed_radius, args.n_perms, 
             data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size, seed_file=args.seed_file,
-            use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H
+            use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H, tfce_dh=args.tfce_dh,
+            save_permutations=args.save_permutations
         )
+        # Unpack depending on what run_phaseshift returns. 
+        if len(res) == 5:
+            mean_map, p_values, mask_data, mask_affine, perm_maps = res
+        else:
+             mean_map, p_values, mask_data, mask_affine = res
+             perm_maps = None
         base_name = f"isfc_{args.condition}_{method}{seed_suffix}"
 
         
@@ -378,12 +427,18 @@ def main():
                 print("Warning: TFCE requires permutation/bootstrap. T-test does not support TFCE. Ignoring --use_tfce.")
             mean_vals, p_vals_vec = run_ttest(masked_data)
         elif method == 'bootstrap':
-            mean_vals, p_vals_vec, p_uncorrected = run_bootstrap(
+            mean_vals, p_vals_vec, p_uncorrected, perm_maps_flat = run_bootstrap(
                 masked_data, n_bootstraps=args.n_perms,
                 use_tfce=args.use_tfce, mask_3d=mask_data,
-                tfce_E=args.tfce_E, tfce_H=args.tfce_H,
-                fwe_method=args.fwe_method
+                tfce_E=args.tfce_E, tfce_H=args.tfce_H, tfce_dh=args.tfce_dh,
+                fwe_method=args.fwe_method, save_permutations=args.save_permutations
             )
+            
+            # Reconstruct perm maps
+            if perm_maps_flat is not None:
+                perm_maps = perm_maps_flat # (V, N)
+            else:
+                perm_maps = None
             
         # Reconstruct maps
         mean_map = np.zeros(mask_data.shape, dtype=np.float32)
@@ -429,6 +484,17 @@ def main():
     if p_uncorrected_3d is not None:
         p_unc_path = os.path.join(output_dir, f"{base_name}_desc-pvalues_uncorrected.nii.gz")
         save_map(p_uncorrected_3d, mask_data, mask_affine, p_unc_path)
+    
+    # 1d. Permutations (if requested and available)
+    if perm_maps is not None:
+        print(f"Saving all {args.n_perms} permutation maps to disk...")
+        n_perms = perm_maps.shape[1]
+        perm_maps_4d = np.zeros(mask_data.shape + (n_perms,), dtype=np.float32)
+        perm_maps_4d[mask_data, :] = perm_maps
+        
+        perm_path = os.path.join(output_dir, f"{base_name}_desc-perms.nii.gz")
+        nib.save(nib.Nifti1Image(perm_maps_4d, mask_affine), perm_path)
+        print(f"Saved permutations to: {perm_path}")
     
     # 2. Significant Map
     sig_map = mean_map.copy()

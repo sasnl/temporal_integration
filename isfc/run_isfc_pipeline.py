@@ -45,8 +45,12 @@ def parse_args():
                         help='TFCE extent parameter (default: 0.5)')
     parser.add_argument('--tfce_H', type=float, default=2.0,
                         help='TFCE height parameter (default: 2.0)')
-    parser.add_argument('--fwe_method', type=str, default='none', choices=['none', 'max_stat', 'bonferroni'],
+    parser.add_argument('--tfce_dh', type=float, default=0.01,
+                        help='TFCE step size. Default: 0.01')
+    parser.add_argument('--fwe_method', type=str, default='none', choices=['none', 'max_stat', 'bonferroni', 'fdr'],
                         help='Family-Wise Error correction method for non-TFCE stats')
+    parser.add_argument('--save_permutations', action='store_true',
+                        help='Save all permutation maps to disk')
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
@@ -133,9 +137,12 @@ def main():
     ] + path_args
     
     if args.use_tfce:
-        stats_cmd.extend(["--use_tfce", "--tfce_E", str(args.tfce_E), "--tfce_H", str(args.tfce_H)])
+        stats_cmd.extend(["--use_tfce", "--tfce_E", str(args.tfce_E), "--tfce_H", str(args.tfce_H), "--tfce_dh", str(args.tfce_dh)])
     elif args.fwe_method != 'none':
         stats_cmd.extend(['--fwe_method', args.fwe_method])
+        
+    if args.save_permutations:
+        stats_cmd.append('--save_permutations')
     
     if args.stats_method == 'phaseshift':
         # Phase shift specific args

@@ -13,7 +13,7 @@ from pipeline_utils import load_mask, load_data, save_map, save_plot, run_isc_co
 from joblib import Parallel, delayed
 # Removed brainiak.isc.bootstrap_isc import as we are implementing it manually for parallelization
 
-def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, seed):
+def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, tfce_dh, seed):
     """
     Helper function for parallel bootstrap iteration (Median).
     """
@@ -22,7 +22,7 @@ def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, 
     sample = data_centered[:, indices]
     
     # Compute Median for this bootstrap sample
-    perm_stat = np.median(sample, axis=1)
+    perm_stat = np.nanmedian(sample, axis=1)
     
     if use_tfce:
         # Apply TFCE to permuted map (relative to null)
@@ -30,7 +30,7 @@ def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, 
         perm_stat_3d[mask_3d] = perm_stat
         
         # TFCE on null distribution (two-sided usually captures magnitude)
-        perm_stat_3d = apply_tfce(perm_stat_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=False)
+        perm_stat_3d = apply_tfce(perm_stat_3d, mask_3d, E=tfce_E, H=tfce_H, dh=tfce_dh, two_sided=False)
         
         # Return Max-Statistic for FWER correction
         return np.max(np.abs(perm_stat_3d))
@@ -42,7 +42,7 @@ def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, 
 
 
 
-def _run_phaseshift_iter(i, n_perms, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
+def _run_phaseshift_iter(i, n_perms, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, tfce_dh, seed):
     if (i+1) % 10 == 0 or i == 0:
         print(f"Starting permutation {i+1} out of {n_perms}", flush=True)
     n_subs = group_data.shape[2]
@@ -61,7 +61,7 @@ def _run_phaseshift_iter(i, n_perms, group_data, chunk_size, use_tfce, mask, tfc
         # FWER Correction: Return max statistic
         null_mean_3d = np.zeros(mask.shape, dtype=np.float32)
         null_mean_3d[mask] = null_mean
-        null_mean_3d = apply_tfce(null_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=False)
+        null_mean_3d = apply_tfce(null_mean_3d, mask, E=tfce_E, H=tfce_H, dh=tfce_dh, two_sided=False)
         return np.max(np.abs(null_mean_3d))
     else:
         return null_mean
@@ -89,8 +89,16 @@ def parse_args():
                         help='TFCE extent parameter (default: 0.5)')
     parser.add_argument('--tfce_H', type=float, default=2.0,
                         help='TFCE height parameter (default: 2.0)')
-    parser.add_argument('--fwe_method', type=str, choices=['none', 'max_stat', 'bonferroni'], default='none',
-                        help='Family-Wise Error correction method for non-TFCE stats. Choices: "none", "max_stat" (Max-Statistic Permutation), "bonferroni". Default: "none".')
+
+    parser.add_argument('--tfce_dh', type=float, default=0.01,
+                        help='TFCE step size. Default: 0.01 (finer step for Z-scores)')
+
+    parser.add_argument('--fwe_method', type=str, choices=['none', 'max_stat', 'bonferroni', 'fdr'], default='none',
+                        help='Family-Wise Error correction method for non-TFCE stats. Choices: "none", "max_stat", "bonferroni", "fdr" (False Discovery Rate). Default: "none".')
+    parser.add_argument('--checkpoint_every', type=int, default=25,
+                        help='Save checkpoint every N permutations (default: 25). Only for Phase Shift.')
+    parser.add_argument('--resume', action='store_true',
+                        help='Resume from existing checkpoint if available. Only for Phase Shift.')
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
@@ -114,7 +122,7 @@ def run_ttest(data_4d):
     mean_map = np.nanmean(data_4d, axis=-1)
     return mean_map, p_values
 
-def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, mask_3d=None, tfce_E=0.5, tfce_H=2.0, fwe_method='none'):
+def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, mask_3d=None, tfce_E=0.5, tfce_H=2.0, tfce_dh=0.01, fwe_method='none'):
     """
     Run bootstrap manually with parallelization (Joblib).
     Replaces run_bootstrap_brainiak for performance reasons.
@@ -142,19 +150,19 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
     
     # 1. Compute Observed Statistic (Median)
     # -------------------------------------
-    observed_check = np.median(data_4d, axis=1) # (V,)
+    observed_check = np.nanmedian(data_4d, axis=1) # (V,)
     
     # 2. Shift Data to Null Hypothesis
     # --------------------------------
     # Hall & Wilson (1991) Geometric shift: Center data so pop median is 0
     # Center each voxel's time series (samples) by subtracting its median
-    data_centered = data_4d - np.median(data_4d, axis=1, keepdims=True)
+    data_centered = data_4d - np.nanmedian(data_4d, axis=1, keepdims=True)
     
     # 3. Parallel Bootstrap Resampling
     # --------------------------------
     results = Parallel(n_jobs=-1, verbose=5)(
         delayed(_run_bootstrap_iter)(
-            i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, random_state + i
+            i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, tfce_dh, random_state + i
         ) for i in range(n_bootstraps)
     )
     
@@ -169,7 +177,7 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
         if mask_3d is None: raise ValueError("mask_3d required for TFCE")
         obs_map_3d = np.zeros(mask_3d.shape, dtype=np.float32)
         obs_map_3d[mask_3d] = observed_check
-        obs_tfce_3d = apply_tfce(obs_map_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=False)
+        obs_tfce_3d = apply_tfce(obs_map_3d, mask_3d, E=tfce_E, H=tfce_H, dh=tfce_dh, two_sided=False)
         obs_tfce_flat = obs_tfce_3d[mask_3d]
         
         # 3b. Null Max Stats
@@ -211,6 +219,40 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
             
             return observed_check, p_corrected, p_uncorrected
             
+
+            
+        elif fwe_method == 'fdr':
+            print("Applying FDR correction (Benjamini-Hochberg)...")
+            # Flatten p-values for correction
+            p_flat = p_uncorrected.flatten()
+            n_vals = p_flat.size
+            
+            # Sort p-values
+            sorted_indices = np.argsort(p_flat)
+            sorted_p = p_flat[sorted_indices]
+            
+            # Compute FDR q-values (adjusted p-values)
+            # q_i = P_i * n / i
+            # But we want to ensure monotonicity: q_i = min(q_i, q_{i+1})
+            
+            # indices 1..N
+            ranks = np.arange(1, n_vals + 1)
+            q_vals = sorted_p * n_vals / ranks
+            
+            # Enforce monotonicity (from end to start)
+            q_vals[-1] = min(q_vals[-1], 1.0)
+            for i in range(n_vals - 2, -1, -1):
+                q_vals[i] = min(q_vals[i], q_vals[i+1])
+                
+            # Map back to original order
+            p_corrected_flat = np.zeros_like(p_flat)
+            p_corrected_flat[sorted_indices] = q_vals
+            
+            # Reshape if necessary (but p_uncorrected is (V,))
+            p_corrected = p_corrected_flat
+            
+            return observed_check, p_corrected, p_uncorrected
+            
         elif fwe_method == 'bonferroni':
             print("Applying Bonferroni correction...")
             n_voxels = observed_check.shape[0]
@@ -223,7 +265,7 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
 
 
 
-def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE, use_tfce=False, tfce_E=0.5, tfce_H=2.0):
+def run_phaseshift(condition, roi_id, n_perms, data_dir, output_dir, mask_file, chunk_size=config.CHUNK_SIZE, use_tfce=False, tfce_E=0.5, tfce_H=2.0, tfce_dh=0.01, checkpoint_every=25, resume=False):
     """
     Run Phase Shift randomization.
     
@@ -253,31 +295,121 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=c
     
     # 1. Compute Observed ISC
     obs_raw, obs_z = run_isc_computation(group_data, chunk_size=chunk_size)
-    obs_mean = np.nanmean(obs_z, axis=1) # (V,)
+    obs_mean = np.nanmean(obs_z, axis=1).astype(np.float32)  # (V,)
     
     if use_tfce:
         # Apply TFCE to observed map
         obs_mean_3d = np.zeros(mask.shape, dtype=np.float32)
         obs_mean_3d[mask] = obs_mean
-        obs_mean_3d = apply_tfce(obs_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=False)
-        obs_mean = obs_mean_3d[mask]
+        obs_mean_3d = apply_tfce(obs_mean_3d, mask, E=tfce_E, H=tfce_H, dh=tfce_dh, two_sided=False)
+        obs_mean = obs_mean_3d[mask].astype(np.float32)
     
-    # 2. Phase Randomization (Parallel)
-    print(f"  Starting {n_perms} permutations...")
-    results = Parallel(n_jobs=-1, verbose=5)(
-        delayed(_run_phaseshift_iter)(
-            i, n_perms, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i
-        ) for i in range(n_perms)
-    )
+    # 2. Phase Randomization (Parallel with Checkpointing)
+    
+    if output_dir is None:
+        raise ValueError("output_dir is required for checkpointing and resume")
 
+    ckpt_name = f"isc_{condition}_phaseshift"
+    if roi_id is not None:
+        ckpt_name += f"_roi-{roi_id}"
     if use_tfce:
-        # FWER Correction
-        null_max_stats = np.array(results) # (n_perms,)
-        p_values = (np.sum(null_max_stats[np.newaxis, :] >= np.abs(obs_mean[:, np.newaxis]), axis=1) + 1) / (n_perms + 1)
+        ckpt_name += "_tfce"
+    ckpt_path = os.path.join(output_dir, f"{ckpt_name}_ckpt.npz")
+
+    completed = 0
+    if use_tfce:
+        null_max_stats = []
     else:
-        # Voxel-wise
-        null_means = np.array(results).T # (V, n_perms)
-        p_values = np.sum(np.abs(null_means) >= np.abs(obs_mean[:, np.newaxis]), axis=1) / (n_perms + 1)
+        # For voxel-wise, we just count how many null stats are greater than observed
+        count_greater = np.zeros(n_voxels, dtype=np.int32)
+        abs_obs = np.abs(obs_mean).astype(np.float32)
+
+    if resume and os.path.exists(ckpt_path):
+        ck = np.load(ckpt_path, allow_pickle=True)
+        completed = int(ck["completed"])
+
+        meta = ck["meta"].item()
+        expected = {
+            "condition": condition,
+            "roi_id": roi_id,
+            "chunk_size": int(chunk_size),
+            "use_tfce": bool(use_tfce),
+            "tfce_E": float(tfce_E),
+            "tfce_H": float(tfce_H),
+            "n_voxels": int(n_voxels),
+        }
+        # Basic metadata check
+        # We allow minor mismatch but it's good to be safe. 
+        # If mismatch, user might need to delete checkpoint or handle manually.
+        if meta != expected:
+            print(f"Warning: Checkpoint meta mismatch. Restarting execution.\nFound: {meta}\nExpected: {expected}")
+            completed = 0
+        else:
+            if use_tfce:
+                null_max_stats = ck["null_max_stats"].astype(np.float32).tolist()
+            else:
+                count_greater = ck["count_greater"].astype(np.int32)
+
+            print(f"Resuming from checkpoint {ckpt_path}")
+            print(f"Completed permutations: {completed} / {n_perms}")
+
+    if completed < n_perms:
+        print(f"  Starting remaining permutations...")
+        
+        # Loop in batches
+        for b0 in range(completed, n_perms, checkpoint_every):
+            b1 = min(b0 + checkpoint_every, n_perms)
+            print(f"  Running permutations {b0} to {b1 - 1}")
+
+            batch_results = Parallel(n_jobs=-1, verbose=5)(
+                delayed(_run_phaseshift_iter)(
+                    i, n_perms, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, tfce_dh, 1000 + i
+                ) for i in range(b0, b1)
+            )
+
+            if use_tfce:
+                null_max_stats.extend([float(x) for x in batch_results])
+            else:
+                for null_mean in batch_results:
+                    count_greater += (np.abs(null_mean).astype(np.float32) >= abs_obs).astype(np.int32)
+
+            completed = b1
+
+            meta = {
+                "condition": condition,
+                "roi_id": roi_id,
+                "chunk_size": int(chunk_size),
+                "use_tfce": bool(use_tfce),
+                "tfce_E": float(tfce_E),
+                "tfce_H": float(tfce_H),
+                "n_voxels": int(n_voxels),
+            }
+
+            if use_tfce:
+                np.savez(
+                    ckpt_path,
+                    completed=completed,
+                    null_max_stats=np.array(null_max_stats, dtype=np.float32),
+                    meta=meta
+                )
+            else:
+                np.savez(
+                    ckpt_path,
+                    completed=completed,
+                    count_greater=count_greater,
+                    meta=meta
+                )
+            print(f"  Saved checkpoint at {completed}: {ckpt_path}")
+
+    # Compute P-values
+    if use_tfce:
+        null_max_arr = np.array(null_max_stats, dtype=np.float32)
+        p_values = (
+            (np.sum(null_max_arr[np.newaxis, :] >= np.abs(obs_mean[:, np.newaxis]), axis=1) + 1)
+            / (len(null_max_arr) + 1)
+        ).astype(np.float32)
+    else:
+        p_values = ((count_greater + 1) / (completed + 1)).astype(np.float32)
     
     # Convert back to 3D for return
     obs_mean_3d = np.zeros(mask.shape, dtype=np.float32)
@@ -323,8 +455,9 @@ def main():
         # Phase shift loads its own data/mask inside the function to ensure compatibility
         mean_map, p_values_3d, mask_data, mask_affine = run_phaseshift(
             args.condition, roi_id, args.n_perms, 
-            data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size,
-            use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H
+            data_dir=data_dir, output_dir=output_dir, mask_file=mask_file, chunk_size=chunk_size,
+            use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H, tfce_dh=args.tfce_dh,
+            checkpoint_every=args.checkpoint_every, resume=args.resume
         )
         
         # Base name for output
@@ -368,7 +501,7 @@ def main():
             mean_vals, p_values, p_uncorrected = run_bootstrap(
                 masked_data, n_bootstraps=args.n_perms, 
                 use_tfce=args.use_tfce, mask_3d=mask_data, 
-                tfce_E=args.tfce_E, tfce_H=args.tfce_H,
+                tfce_E=args.tfce_E, tfce_H=args.tfce_H, tfce_dh=args.tfce_dh,
                 fwe_method=args.fwe_method
             )
         

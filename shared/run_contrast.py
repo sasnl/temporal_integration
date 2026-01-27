@@ -14,7 +14,7 @@ import config
 from pipeline_utils import load_mask, save_map, save_plot, apply_cluster_threshold, apply_tfce
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Run Contrast Analysis (Within-Subject)')
+    parser = argparse.ArgumentParser(description='Run Paired Comparison of ISC/ISFC Maps (Between Conditions)')
     parser.add_argument('--cond1', type=str, required=True, help='Condition 1 Name (e.g., TI1_orig)')
     parser.add_argument('--cond2', type=str, required=True, help='Condition 2 Name (e.g., TI1_sent)')
     parser.add_argument('--type', type=str, choices=['isc', 'isfc'], required=True, help='Analysis Type')

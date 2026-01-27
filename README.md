@@ -114,13 +114,14 @@ python shared/rethreshold_results.py --result_dir /path/to/results --thresholds 
 - `--result_dir`: Root directory containing analysis results. The script recursively scans for `_desc-pvalues.nii.gz` maps.
 - `--thresholds`: List of p-value thresholds to apply (default: 0.01, 0.005, 0.001).
 
-### 4. Contrast Analysis (Within-Subject)
+### 4. Paired Comparison of ISC/ISFC (Between Conditions)
 
-Perform paired statistical comparisons between conditions (e.g., Orig vs Sent) for subjects who have data in all conditions.
+Perform paired statistical comparisons of **ISC or ISFC strength** between two conditions (e.g., "Is synchronization higher in Orig than Sent?") for subjects who have data in both.
 
 **Features:**
-- **Automated Subject Filtering**: Uses `have_all_3` column in the subject list Excel file to select valid subjects.
-- **Statistical Methods**: Paired T-Test, Sign Permutation (Robust), or Bootstrap.
+- **Input**: Uses the computed ISC/ISFC Z-score maps from Step 1 (`_desc-zscore.nii.gz`). It analyzes the difference in correlation strength (`ISC_CondA - ISC_CondB`).
+- **Automated Subject Filtering**: Ensures subjects match across conditions and checks the `have_all_3` column in the subject list Excel file.
+- **Statistical Methods**: Paired T-Test, Sign Permutation (Robust), or Bootstrap on the difference maps.
 - **Correction**: Supports TFCE (recommended) or Cluster-based thresholding.
 
 **Usage:**
