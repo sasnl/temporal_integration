@@ -422,6 +422,8 @@ def main():
         
         masked_data = data_4d[mask_data] # (V, S)
         
+        perm_maps = None
+        
         if method == 'ttest':
             if args.use_tfce:
                 print("Warning: TFCE requires permutation/bootstrap. T-test does not support TFCE. Ignoring --use_tfce.")

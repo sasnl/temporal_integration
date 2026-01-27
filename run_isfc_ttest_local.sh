@@ -17,36 +17,66 @@ echo "=== Starting ISFC Analysis (T-Test) ==="
 # --- LOO Method ---
 echo "Running LOO Method..."
 # PMC
-python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method loo --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --output_dir "$RESULT_DIR/loo"
-python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method loo --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --output_dir "$RESULT_DIR/loo"
-python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method loo --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --output_dir "$RESULT_DIR/loo"
+python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method loo --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/loo"
+python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method loo --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/loo"
+
+python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method loo --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/loo"
+python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method loo --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/loo"
+
+python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method loo --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/loo"
+python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method loo --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/loo"
 
 # LpSTS
-python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method loo --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --output_dir "$RESULT_DIR/loo"
-python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method loo --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --output_dir "$RESULT_DIR/loo"
-python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method loo --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --output_dir "$RESULT_DIR/loo"
+python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method loo --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/loo"
+python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method loo --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/loo"
+
+python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method loo --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/loo"
+python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method loo --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/loo"
+
+python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method loo --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/loo"
+python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method loo --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/loo"
 
 # RpSTS
-python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method loo --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --output_dir "$RESULT_DIR/loo"
-python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method loo --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --output_dir "$RESULT_DIR/loo"
-python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method loo --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --output_dir "$RESULT_DIR/loo"
+python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method loo --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/loo"
+python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method loo --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/loo"
+
+python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method loo --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/loo"
+python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method loo --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/loo"
+
+python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method loo --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/loo"
+python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method loo --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/loo"
 
 # --- Pairwise Method ---
 echo "Running Pairwise Method..."
 # PMC
-python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method pairwise --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --output_dir "$RESULT_DIR/pairwise"
-python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method pairwise --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --output_dir "$RESULT_DIR/pairwise"
-python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method pairwise --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --output_dir "$RESULT_DIR/pairwise"
+python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method pairwise --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/pairwise"
+python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method pairwise --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/pairwise"
+
+python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method pairwise --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/pairwise"
+python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method pairwise --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/pairwise"
+
+python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method pairwise --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/pairwise"
+python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method pairwise --stats_method ttest --seed_x 0 --seed_y -53 --seed_z 2 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/pairwise"
 
 # LpSTS
-python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method pairwise --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --output_dir "$RESULT_DIR/pairwise"
-python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method pairwise --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --output_dir "$RESULT_DIR/pairwise"
-python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method pairwise --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --output_dir "$RESULT_DIR/pairwise"
+python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method pairwise --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/pairwise"
+python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method pairwise --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/pairwise"
+
+python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method pairwise --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/pairwise"
+python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method pairwise --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/pairwise"
+
+python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method pairwise --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/pairwise"
+python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method pairwise --stats_method ttest --seed_x -63 --seed_y -42 --seed_z 9 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/pairwise"
 
 # RpSTS
-python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method pairwise --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --output_dir "$RESULT_DIR/pairwise"
-python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method pairwise --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --output_dir "$RESULT_DIR/pairwise"
-python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method pairwise --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --output_dir "$RESULT_DIR/pairwise"
+python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method pairwise --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/pairwise"
+python isfc/run_isfc_pipeline.py --condition TI1_orig --isfc_method pairwise --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/pairwise"
+
+python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method pairwise --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/pairwise"
+python isfc/run_isfc_pipeline.py --condition TI1_sent --isfc_method pairwise --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/pairwise"
+
+python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method pairwise --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --fwe_method fdr --output_dir "$RESULT_DIR/pairwise"
+python isfc/run_isfc_pipeline.py --condition TI1_word --isfc_method pairwise --stats_method ttest --seed_x 57 --seed_y -31 --seed_z 5 --p_threshold 0.05 --fwe_method bonferroni --output_dir "$RESULT_DIR/pairwise"
 
 echo "=== Analysis Complete. Starting Re-thresholding ==="
 

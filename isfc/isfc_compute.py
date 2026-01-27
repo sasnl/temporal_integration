@@ -147,6 +147,35 @@ def main():
         print("Error: Empty mask.")
         return
 
+    # Prepare Seed Name and paths early for skipping
+    seed_name = ""
+    if args.seed_file:
+        # Load seed file
+        seed_mask_data, seed_affine = load_mask(args.seed_file)
+        if seed_mask_data.shape != mask.shape:
+             print(f"Error: Seed file shape {seed_mask_data.shape} does not match Analysis mask shape {mask.shape}")
+             return
+        seed_mask = seed_mask_data > 0
+        seed_name = f"seed-{os.path.basename(args.seed_file).replace('.nii', '').replace('.gz', '')}"
+        print(f"  Loaded seed file mask with {np.sum(seed_mask)} voxels")
+    else:
+        seed_coords = (args.seed_x, args.seed_y, args.seed_z)
+        seed_radius = args.seed_radius
+        seed_mask = get_seed_mask(mask.shape, affine, seed_coords, seed_radius)
+        seed_name = f"seed{int(seed_coords[0])}_{int(seed_coords[1])}_{int(seed_coords[2])}_r{int(seed_radius)}"
+
+    roi_suffix = f"_roi{roi_id}" if roi_id is not None else ""
+    # Add explicit separator for seed
+    base_name = f"isfc_{condition}_{method}_{seed_name}{roi_suffix}"
+    
+    raw_path = os.path.join(output_dir, f"{base_name}_desc-raw.nii.gz")
+    z_path = os.path.join(output_dir, f"{base_name}_desc-zscore.nii.gz")
+    
+    if os.path.exists(z_path):
+        print(f"Output already exists: {z_path}")
+        print("Skipping computation.")
+        return
+
     # Load Data
     if condition in config.SUBJECT_LISTS:
         subjects = config.SUBJECT_LISTS[condition]
@@ -162,26 +191,6 @@ def main():
 
     start_time = time.time()
     
-    # Prepare Seed
-    seed_name = ""
-    if args.seed_file:
-        # Load seed file
-        seed_mask_data, seed_affine = load_mask(args.seed_file)
-        # Verify compatibility
-        if seed_mask_data.shape != mask.shape:
-             print(f"Error: Seed file shape {seed_mask_data.shape} does not match Analysis mask shape {mask.shape}")
-             return
-        
-        seed_mask = seed_mask_data > 0
-        seed_name = f"seed-{os.path.basename(args.seed_file).replace('.nii', '').replace('.gz', '')}"
-        print(f"  Loaded seed file mask with {np.sum(seed_mask)} voxels")
-        
-    else:
-        seed_coords = (args.seed_x, args.seed_y, args.seed_z)
-        seed_radius = args.seed_radius
-        seed_mask = get_seed_mask(mask.shape, affine, seed_coords, seed_radius)
-        seed_name = f"seed{int(seed_coords[0])}_{int(seed_coords[1])}_{int(seed_coords[2])}_r{int(seed_radius)}"
-    
     seed_ts = load_seed_data(group_data, seed_mask, mask) # (TR, 1, S)
     print(f"Seed timecourse loaded: {seed_ts.shape}")
     
@@ -189,12 +198,6 @@ def main():
     isfc_raw, isfc_z = run_isfc_computation(group_data, seed_ts, pairwise=pairwise, chunk_size=chunk_size)
     
     # Save Maps
-    roi_suffix = f"_roi{roi_id}" if roi_id is not None else ""
-    # Add explicit separator for seed
-    base_name = f"isfc_{condition}_{method}_{seed_name}{roi_suffix}"
-    
-    raw_path = os.path.join(output_dir, f"{base_name}_desc-raw.nii.gz")
-    z_path = os.path.join(output_dir, f"{base_name}_desc-zscore.nii.gz")
     
     save_map(isfc_raw, mask, affine, raw_path)
     save_map(isfc_z, mask, affine, z_path)
