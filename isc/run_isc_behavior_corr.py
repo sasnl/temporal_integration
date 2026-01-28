@@ -248,53 +248,58 @@ def run_permutation(brain_data, behavior, n_perms, corr_method, mask_data, use_t
     # Compute Observed R
     r_obs = compute_correlation(brain_data, behavior, corr_method)
     
-    # Convert r to t-stat for TFCE (better dynamic range)
-    # t = r * sqrt(n-2) / sqrt(1-r^2)
-    # Avoid div/0
+    # Convert r to Fisher Z for TFCE (Normalized distribution)
+    # Z = arctanh(r)
     r_obs_safe = np.clip(r_obs, -0.999999, 0.999999)
-    df = n_subs - 2
-    t_obs = r_obs_safe * np.sqrt(df) / np.sqrt(1 - r_obs_safe**2)
+    # Use Fisher Z instead of T-stat to avoid massive scaling at high r
+    # and to align closer with isc_stats (which uses Z maps)
+    z_obs = np.arctanh(r_obs_safe)
     
-    stat_obs = t_obs if use_tfce else r_obs
+    stat_obs = z_obs if use_tfce else r_obs
     
     # TFCE Observed
     if use_tfce:
         stat_obs_3d = np.zeros(mask_data.shape, dtype=np.float32)
         stat_obs_3d[mask_data] = stat_obs
         stat_obs_3d = apply_tfce(stat_obs_3d, mask_data, E=tfce_E, H=tfce_H, two_sided=True)
-        metric_obs = np.max(np.abs(stat_obs_3d)) # Just for tracking? No, this is the map.
+        # metric_obs = np.max(np.abs(stat_obs_3d)) # Not needed
         perm_input_map = stat_obs_3d
     else:
         perm_input_map = stat_obs
     
     # Parallel Permutations
     def _perm_loop(i):
+        # Use unique seed for each permutation to ensure diversity in parallel workers
+        local_rng = np.random.RandomState(42 + i)
+        
         # Shuffle behavior
-        y_perm = rng.permutation(behavior)
+        y_perm = local_rng.permutation(behavior)
         
         if corr_method == 'spearman':
             from scipy.stats import rankdata
             y_perm = rankdata(y_perm)
             
         # Pearson logic
-        y_c = y_perm - np.mean(y_perm)
-        norm_y = np.sqrt(np.sum(y_c**2))
+        y_c = y_perm - np.nanmean(y_perm) # Use nanmean just in case
         
-        r_perm = np.dot(X_c, y_c) / (norm_x * norm_y)
+        # Recalculate norms here locally to be safe or reuse pre-calc?
+        # Reuse pre-calc norm_x (assuming it handled NaNs? Check main func)
+        # Re-calc norm_y for this permutation
+        norm_y = np.sqrt(np.nansum(y_c**2))
+        
+        # r_perm = dot(X_c, y_c) / ... -> nansum(X_c * y_c)
+        r_perm = np.nansum(X_c * y_c, axis=1) / (norm_x * norm_y)
         
         if use_tfce:
             r_perm = np.clip(r_perm, -0.999999, 0.999999)
-            t_perm = r_perm * np.sqrt(df) / np.sqrt(1 - r_perm**2)
+            z_perm = np.arctanh(r_perm) # Fisher Z
             
-            t_perm_3d = np.zeros(mask_data.shape, dtype=np.float32)
-            t_perm_3d[mask_data] = t_perm
+            z_perm_3d = np.zeros(mask_data.shape, dtype=np.float32)
+            z_perm_3d[mask_data] = z_perm
             # TFCE
-            t_perm_3d = apply_tfce(t_perm_3d, mask_data, E=tfce_E, H=tfce_H, two_sided=True)
-            return np.max(np.abs(t_perm_3d))
+            z_perm_3d = apply_tfce(z_perm_3d, mask_data, E=tfce_E, H=tfce_H, two_sided=True)
+            return np.max(np.abs(z_perm_3d))
         else:
-            # Just return max |r| for FWER? Or return whole map for voxelwise?
-            # To save memory, let's just return max for FWER, 
-            # and rely on parametric p-values for "uncorrected" map (since n=21 is decent for parametric).
             return np.max(np.abs(r_perm))
 
     null_max = Parallel(n_jobs=-1, verbose=5)(
@@ -305,7 +310,11 @@ def run_permutation(brain_data, behavior, n_perms, corr_method, mask_data, use_t
     # Calculate Parametric Uncorrected P-values regardless of Permutation method
     # t = r * sqrt(n-2) / sqrt(1-r^2)
     from scipy.stats import t as t_dist
-    p_unc = 2 * (1 - t_dist.cdf(np.abs(t_obs), df))
+    df = n_subs - 2
+    # Recalculate t_obs for parametric check (r_obs is still available)
+    r_safe_p = np.clip(r_obs, -0.999999, 0.999999)
+    t_obs_p = r_safe_p * np.sqrt(df) / np.sqrt(1 - r_safe_p**2)
+    p_unc = 2 * (1 - t_dist.cdf(np.abs(t_obs_p), df))
 
     # Calculate P-values
     # 1. TFCE FWER P
@@ -371,6 +380,11 @@ def main():
     r_path = os.path.join(args.output_dir, f"{base_name}_desc-r.nii.gz")
     save_map(r_map, mask_data, affine, r_path)
     
+    # Plot Raw R Map
+    plot_r_path = os.path.join(args.output_dir, f"{base_name}_desc-r.png")
+    save_plot(r_path, plot_r_path, f"Raw Correlation (r): {args.condition} vs {args.behavior_col}", positive_only=False)
+    print(f"Saved Raw R Plot to {plot_r_path}")
+
     # Save Uncorrected P map
     p_unc_path = os.path.join(args.output_dir, f"{base_name}_desc-pvalues_uncorrected.nii.gz")
     p_unc_3d = np.ones(mask_data.shape, dtype=np.float32)
@@ -400,9 +414,6 @@ def main():
         sig_r_unc[p_unc >= args.p_threshold] = 0
         sig_unc_path = os.path.join(args.output_dir, f"{base_name}_desc-sig_uncorrected_p{str(args.p_threshold).replace('.', '')}.nii.gz")
         
-        # We don't cluster threshold uncorrected map here by default, or should we?
-        # User asked to "plot the significant correlation map uncorrected".
-        # Let's clean up NaNs before saving
         sig_r_unc = np.nan_to_num(sig_r_unc)
         
         # Save 3D
@@ -412,7 +423,7 @@ def main():
         
         # Plot Uncorrected
         plot_unc_path = os.path.join(args.output_dir, f"{base_name}_desc-sig_uncorrected.png")
-        save_plot(sig_unc_path, plot_unc_path, f"Correlation (Uncorrected p<{args.p_threshold}): {args.condition} vs {args.behavior_col}", positive_only=False)
+        save_plot(sig_unc_path, plot_unc_path, f"Significant (Uncorrected p<{args.p_threshold}): {args.condition} vs {args.behavior_col}", positive_only=False)
         print(f"Saved Uncorrected Significant Plot to {plot_unc_path}")
 
     # Cluster Correction (Optional)
@@ -429,12 +440,13 @@ def main():
         sig_r_to_save = np.zeros(mask_data.shape, dtype=np.float32)
         sig_r_to_save[mask_data] = sig_r
         
+    sig_r_to_save = np.nan_to_num(sig_r_to_save) # Ensure no NaNs, similar to uncorrected
     sig_path = os.path.join(args.output_dir, f"{base_name}_desc-sig_p{str(args.p_threshold).replace('.', '')}.nii.gz")
     save_map(sig_r_to_save, mask_data, affine, sig_path)
     
-    # Plot
+    # Plot TFCE/Corrected
     plot_path = os.path.join(args.output_dir, f"{base_name}_desc-sig.png")
-    title = f"Correlation: {args.condition} vs {args.behavior_col} ({args.corr_method})"
+    title = f"Significant (Corrected p<{args.p_threshold}): {args.condition} vs {args.behavior_col}"
     save_plot(sig_path, plot_path, title, positive_only=False)
     
     # NaN Check
