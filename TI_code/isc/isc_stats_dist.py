@@ -4,7 +4,7 @@ import argparse
 import numpy as np
 import time
 import nibabel as nib
-from joblib import Parallel, delayed
+from joblib import Parallel
 from scipy.stats import ttest_1samp
 from brainiak.utils.utils import phase_randomize
 
@@ -13,11 +13,16 @@ TI_CODE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 if TI_CODE_DIR not in sys.path:
     sys.path.insert(0, TI_CODE_DIR)
 
-from shared import config
-from shared.pipeline_utils import (
+
+import config
+from pipeline_utils_dist import (
     load_mask, load_data, save_map, save_plot, run_isc_computation,
     apply_cluster_threshold, apply_tfce
 )
+
+from dask_jobqueue import SLURMCluster
+from distributed import Client
+from dask import delayed
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Step 2: Statistical Analysis for ISC')
@@ -58,7 +63,8 @@ def parse_args():
                         help=f'Chunk size (default: {config.CHUNK_SIZE})')
     return parser.parse_args()
 
-def _run_phaseshift_iter(i, n_perms, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
+def _run_phaseshift_iter(i, n_perms, group_data_path, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
+    group_data=np.load(group_data_path)
     if (i+1) % 10 == 0 or i == 0:
         print(f"Starting permutation {i+1} out of {n_perms}", flush=True)
     n_subs = group_data.shape[2]
@@ -189,7 +195,7 @@ def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42, use_tfce=F
     
 #DE added check points to be able to pick up where we left off
     
-def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, chunk_size=config.CHUNK_SIZE, use_tfce=False, tfce_E=0.5, tfce_H=2.0, checkpoint_every=25,resume=False):
+def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, chunk_size=config.CHUNK_SIZE, use_tfce=False, tfce_E=0.5, tfce_H=2.0, checkpoint_every=100,resume=False):
     """
     Run Phase Shift randomization.
     
@@ -212,12 +218,13 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
     else:
         subjects = config.SUBJECTS
 
-    if not os.path.exists(os.path.join(output_dir,'group_data.npy')):    
+    group_data_path=os.path.join(output_dir,'group_data.npy')
+    if not os.path.exists(group_data_path):    
         group_data = load_data(condition, subjects, mask, data_dir)
         if group_data is None: raise ValueError("No data")   
-        np.save(os.path.join(output_dir,'group_data.npy'),group_data)
+        np.save(group_data_path,group_data)
     else:
-        group_data=np.load(os.path.join(output_dir,'group_data.npy'))
+        group_data=np.load(group_data_path)
 
     n_trs, n_voxels, n_subs = group_data.shape
 
@@ -240,6 +247,13 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
     #     ) for i in range(n_perms)
     # )
 
+    cluster=SLURMCluster(account='menon',queue='menon,owners,normal',cores=4,memory='16GB',walltime='00:30:00')
+    cluster.scale(jobs=10)
+    client=Client(cluster)
+    client.upload_file('../shared/config.py')
+    client.upload_file('../shared/pipeline_utils_dist.py')
+
+  
 
     if output_dir is None:
         raise ValueError("output_dir is required for checkpointing and resume")
@@ -293,13 +307,19 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
         b1 = min(b0 + checkpoint_every, n_perms)
         print(f"  Running permutations {b0} to {b1 - 1}")
 
-        batch_results = Parallel(n_jobs=1, verbose=5,backend='threading')(
-            delayed(_run_phaseshift_iter)(
-                i, n_perms, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i
-            ) for i in range(b0, b1)
-        )
+        # batch_results = Parallel(n_jobs=1, verbose=5)(
+        #     delayed(_run_phaseshift_iter)(
+        #         i, n_perms, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i
+        #     ) for i in range(b0, b1)
+        # )
+
         # for i in range(b0,b1):
         #     batch_results = _run_phaseshift_iter(i, n_perms, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i)
+
+        results=[delayed(_run_phaseshift_iter)(i, n_perms, group_data_path, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i) for i in range(n_perms)]
+
+        futures=client.compute(results)
+        batch_results=client.gather(futures)
 
         if use_tfce:
             null_max_stats.extend([float(x) for x in batch_results])

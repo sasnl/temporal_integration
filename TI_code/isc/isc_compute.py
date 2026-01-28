@@ -65,10 +65,14 @@ def main():
         return
 
     # Load Data
-    group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
-    if group_data is None:
-        print("Error: No data loaded.")
-        return
+    if not os.path.exists(os.path.join(output_dir,'group_data.npy')):    
+        group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
+        if group_data is None:
+            print("Error: No data loaded.")
+            return
+        np.save(os.path.join(output_dir,'group_data.npy'),group_data)
+    else:
+        group_data=np.load(os.path.join(output_dir,'group_data.npy'))
     
     start_time = time.time()
     

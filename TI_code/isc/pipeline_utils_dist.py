@@ -5,8 +5,7 @@ import nibabel as nib
 from nilearn import plotting
 import matplotlib.pyplot as plt
 from brainiak.isc import isc
-from joblib import Parallel
-from joblib import delayed as jobdelayed
+from joblib import Parallel, delayed
 from scipy.ndimage import label
 from shared import config
 
@@ -290,6 +289,7 @@ def run_isc_computation(data, pairwise=False, chunk_size=config.CHUNK_SIZE):
     """
     print(f"Running ISC computation (Pairwise={pairwise}, Chunk Size: {chunk_size})")
     n_trs, n_voxels, n_subs = data.shape
+    
     n_chunks = int(np.ceil(n_voxels / chunk_size))
     def _chunk_iter():
         for i in range(n_chunks):
@@ -298,7 +298,7 @@ def run_isc_computation(data, pairwise=False, chunk_size=config.CHUNK_SIZE):
             yield data[:, start_idx:end_idx, :]
     # n_jobs = int(os.environ.get("SLURM_CPUS_PER_TASK", "1"))
     results = Parallel(n_jobs=-1,verbose=5,backend='threading')(
-        jobdelayed(compute_isc_chunk)(chunk, pairwise) for chunk in _chunk_iter())
+        delayed(compute_isc_chunk)(chunk, pairwise) for chunk in _chunk_iter())
 
 
     # results = Parallel(n_jobs=n_jobs,verbose=5, prefer="threads")(

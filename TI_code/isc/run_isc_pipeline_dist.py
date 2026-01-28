@@ -46,7 +46,7 @@ def parse_args():
                         help=f'Output directory (default: {config.OUTPUT_DIR})')
     parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
                         help=f'Path to mask file (default: {config.MASK_FILE})')
-    parser.add_argument('--chunk_size', type=int, default=20000,
+    parser.add_argument('--chunk_size', type=int, default=30000,
                         help='Chunk size for processing (default: 300000)')
     return parser.parse_args()
 
@@ -101,7 +101,7 @@ def main():
     
     # 2. Run Step 2: Statistics
     print("\n=== STEP 2: ISC STATISTICS ===")
-    stats_script = os.path.join(script_dir, 'isc_stats.py')
+    stats_script = os.path.join(script_dir, 'isc_stats_dist.py')
     cmd_step2 = [
         python_exec, stats_script,
         '--method', args.stats_method,

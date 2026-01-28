@@ -83,6 +83,6 @@ for lines in `cat $params_txt_file`; do
     \"${data_dir}\" \
     \"${output_dir_thisrun}\" \
     \"${p_from_file}\"" >> TI_isc.sbatch
-    sbatch -p menon,owners -c 8 --mem=${mem}G -t 5:00:00 -o "${output_dir_thisrun}/temporal_integration_${condition}_${p_from_file}_${tfce_flag}_%j.log" TI_isc.sbatch;
+    sbatch -p menon,owners -c 8 --mem=${mem}G -t 3:00:00 -o "${output_dir_thisrun}/temporal_integration_${condition}_${p_from_file}_${tfce_flag}_%j.log" TI_isc.sbatch;
     rm TI_isc.sbatch;
 done
