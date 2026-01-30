@@ -13,7 +13,7 @@ import time
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'shared'))
 import shared.config as config
-from shared.pipeline_utils import load_mask, save_map, save_plot, apply_cluster_threshold, apply_tfce
+from shared.pipeline_utils import load_mask, save_map, save_plot, apply_cluster_threshold, apply_tfce, apply_fdr, apply_bonferroni
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Run Correlation between ISC/ISFC Maps and Behavioral Scores')
@@ -37,6 +37,7 @@ def parse_args():
     parser.add_argument('--p_threshold', type=float, default=0.05, help='P-value threshold')
     parser.add_argument('--cluster_threshold', type=int, default=0, help='Cluster threshold (voxels)')
     parser.add_argument('--use_tfce', action='store_true', help='Use TFCE correction')
+    parser.add_argument('--fwe_method', type=str, choices=['none', 'max_stat', 'bonferroni', 'fdr'], default='none', help='FWE Correction Method')
     parser.add_argument('--tfce_E', type=float, default=0.5)
     parser.add_argument('--tfce_H', type=float, default=2.0)
     
@@ -103,6 +104,20 @@ def load_subjects_and_behavior(csv_path, col_name, condition, contrast_cond=None
         
     return common_subs, behavior_scores, list1, list2
 
+def get_pairwise_indices(n_subjects):
+    """
+    Returns a list of lists, where list[i] contains the indices of all pairs involving subject i.
+    Assumes standard upper-triangle unraveling (0,1), (0,2)... (0,N-1), (1,2)...
+    """
+    pair_indices = [[] for _ in range(n_subjects)]
+    idx = 0
+    for i in range(n_subjects):
+        for j in range(i + 1, n_subjects):
+            pair_indices[i].append(idx)
+            pair_indices[j].append(idx)
+            idx += 1
+    return pair_indices
+
 def load_brain_data(condition, isc_method, roi_id, data_dir, full_subject_list, common_subs, mask_file):
     """
     Loads 4D ISC map and extracts subjects.
@@ -152,7 +167,56 @@ def load_brain_data(condition, isc_method, roi_id, data_dir, full_subject_list, 
         pass
     else:
          raise ValueError(f"Expected 4D map, got {data_full.shape}")
-         
+    
+    n_vols = data_full.shape[3]
+    n_subs_config = len(full_subject_list)
+    
+    # Check if Pairwise
+    if isc_method == 'pairwise':
+        # Expected pairs: N * (N-1) / 2
+        expected_pairs = n_subs_config * (n_subs_config - 1) // 2
+        
+        if n_vols == expected_pairs:
+            print(f"Detected Pairwise Data ({n_vols} volumes for {n_subs_config} subjects). Averaging to subject-level maps...")
+            
+            # Reconstruct Subject Maps from Pairs
+            # Formula: For each subject, average correlations with all others
+            pair_indices = get_pairwise_indices(n_subs_config)
+            
+            # data_full[mask]: (V, n_pairs)
+            masked_all = data_full[mask_data] # (V, n_pairs)
+            
+            n_voxels = masked_all.shape[0]
+            
+            # Create array for subject average maps: (V, n_subjects)
+            # We use FLOAT32 to save memory
+            data_subs = np.zeros((n_voxels, n_subs_config), dtype=np.float32)
+            
+            for i in range(n_subs_config):
+                # Indices of pairs involving subject i
+                p_idxs = pair_indices[i]
+                if not p_idxs:
+                    # Should not happen if N >= 2
+                    print(f"Warning: No pairs found for subject index {i}")
+                    continue
+                
+                # Average columns
+                # (V, n_subset) -> mean -> (V,)
+                # Use nanmean to handle possible NaNs in pairwise data (e.g. poor coverage)
+                data_subs[:, i] = np.nanmean(masked_all[:, p_idxs], axis=1)
+                
+            # Now extract only the 'common_subs' requested for analysis
+            indices = [full_subject_list.index(s) for s in common_subs]
+            data_flat = data_subs[:, indices] # (V, N_common)
+            
+            return data_flat, mask_data, affine
+            
+        elif n_vols == n_subs_config:
+            print("Warning: Method logic says 'pairwise' but volume count matches n_subjects (LOO?). Treating as pre-calculated LOO/Subject maps.")
+        else:
+            raise ValueError(f"Pairwise method selected, but volume count {n_vols} does not match expected pairs {expected_pairs} (for {n_subs_config} subjects).")
+
+    # Standard LOO / Subject-wise logic
     # Flatten via Mask
     # data_full[mask]: (V, S_total)
     # Check subject count
@@ -167,6 +231,21 @@ def load_brain_data(condition, isc_method, roi_id, data_dir, full_subject_list, 
     data_flat = data_full[mask_data][:, indices] # (V, N_common)
     
     return data_flat, mask_data, affine
+
+def get_pairwise_indices(n_subjects):
+    """
+    Returns a list of lists, where list[i] contains the indices of all pairs involving subject i.
+    Assumes standard upper-triangle unraveling (0,1), (0,2)... (0,N-1), (1,2)...
+    """
+    pair_indices = [[] for _ in range(n_subjects)]
+    idx = 0
+    for i in range(n_subjects):
+        for j in range(i + 1, n_subjects):
+            pair_indices[i].append(idx)
+            pair_indices[j].append(idx)
+            idx += 1
+    return pair_indices
+
 
 def compute_correlation(brain_data, behavior, method='pearson'):
     """
@@ -222,7 +301,7 @@ def compute_correlation(brain_data, behavior, method='pearson'):
         
     return r
 
-def run_permutation(brain_data, behavior, n_perms, corr_method, mask_data, use_tfce, tfce_E, tfce_H):
+def run_permutation(brain_data, behavior, n_perms, corr_method, mask_data, use_tfce, tfce_E, tfce_H, fwe_method='none'):
     """
     Permutes behavior vector.
     """
@@ -326,6 +405,13 @@ def run_permutation(brain_data, behavior, n_perms, corr_method, mask_data, use_t
         p_fwer = (np.sum(null_max[:, np.newaxis] >= np.abs(obs_flat[np.newaxis, :]), axis=0) + 1) / (n_perms + 1)
         
         return r_obs, p_unc, p_fwer # Return Raw R, P_Unc, P_FWER
+    elif fwe_method == 'max_stat':
+        print("Computing Max-Statistic FWER correction...")
+        # Max statistic across voxels for each permutation (already in null_max for standard r case)
+        # Compare observed r against max null distribution
+        obs_flat = np.abs(r_obs)
+        p_fwer = (np.sum(null_max[:, np.newaxis] >= obs_flat[np.newaxis, :], axis=0) + 1) / (n_perms + 1)
+        return r_obs, p_unc, p_fwer
     else:
         return r_obs, p_unc, None
 
@@ -361,10 +447,20 @@ def main():
     else:
         print(f"Computing Correlation on Condition: {args.condition}")
         
+    # DEBUG: Check Data
+    print(f"Behavior Scores (n={len(behavior)}): {behavior}")
+    print(f"Behavior Std: {np.std(behavior)}")
+    print(f"Brain Data Shape: {final_data.shape}")
+    print(f"Brain Data NaNs: {np.isnan(final_data).sum()}")
+    print(f"Brain Data Mean Std (across time/subs): {np.nanmean(np.nanstd(final_data, axis=1))}")
+        
     # 3. Correlation & Stats
-    r_map, p_unc, p_fwer = run_permutation(
+        
+    # 3. Correlation & Stats
+    # 3. Correlation & Stats
+    r_map, p_unc, p_fwer_perm = run_permutation(
         final_data, behavior, args.n_perms, args.corr_method, 
-        mask_data, args.use_tfce, args.tfce_E, args.tfce_H
+        mask_data, args.use_tfce, args.tfce_E, args.tfce_H, args.fwe_method
     )
     
     # 4. Save
@@ -375,6 +471,8 @@ def main():
     
     if args.use_tfce:
         base_name += "_tfce"
+    elif args.fwe_method != 'none':
+        base_name += f"_{args.fwe_method}"
         
     # Save R map
     r_path = os.path.join(args.output_dir, f"{base_name}_desc-r.nii.gz")
@@ -392,14 +490,38 @@ def main():
     save_map(p_unc_3d, mask_data, affine, p_unc_path)
     
     # Decide which P-values to use for significance map
-    if p_fwer is not None:
-        p_final = p_fwer
+    # Decide which P-values to use for significance map
+    if p_fwer_perm is not None:
+        p_final = p_fwer_perm
         # Save FWER P map
         p_fwer_path = os.path.join(args.output_dir, f"{base_name}_desc-pvalues.nii.gz")
         p_fwer_3d = np.ones(mask_data.shape, dtype=np.float32)
-        p_fwer_3d[mask_data] = p_fwer
+        p_fwer_3d[mask_data] = p_fwer_perm
         save_map(p_fwer_3d, mask_data, affine, p_fwer_path)
         print(f"Saving FWER Corrected P-values to {p_fwer_path}")
+    elif args.fwe_method == 'fdr':
+        # Calculate FDR
+        print("Applying FDR correction...")
+        p_fdr, reject = apply_fdr(p_unc, alpha=args.p_threshold)
+        p_final = p_fdr
+        
+        # Save FDR P map (Q-values)
+        p_fdr_path = os.path.join(args.output_dir, f"{base_name}_desc-qvalues.nii.gz")
+        p_fdr_3d = np.ones(mask_data.shape, dtype=np.float32)
+        p_fdr_3d[mask_data] = p_fdr
+        save_map(p_fdr_3d, mask_data, affine, p_fdr_path)
+        print(f"Saving FDR Corrected Q-values to {p_fdr_path}")
+    elif args.fwe_method == 'bonferroni':
+        print("Applying Bonferroni correction...")
+        p_bonf, reject = apply_bonferroni(p_unc, alpha=args.p_threshold)
+        p_final = p_bonf
+        
+        # Save P map
+        p_bonf_path = os.path.join(args.output_dir, f"{base_name}_desc-pvalues_bonferroni.nii.gz")
+        p_bonf_3d = np.ones(mask_data.shape, dtype=np.float32)
+        p_bonf_3d[mask_data] = p_bonf
+        save_map(p_bonf_3d, mask_data, affine, p_bonf_path)
+        print(f"Saving Bonferroni Corrected P-values to {p_bonf_path}")
     else:
         p_final = p_unc
         print(f"Saving Uncorrected P-values to {p_unc_path}")

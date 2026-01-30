@@ -191,7 +191,7 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
         p_values_uncorrected = p_values_corrected # Placeholder or logic change needed? 
         # Actually for TFCE, users mostly care about corrected.
         
-        return obs_tfce_flat, p_values_corrected, p_values_uncorrected
+        return obs_tfce_flat, p_values_corrected, p_values_uncorrected, None
 
     else:
         # Non-TFCE
@@ -212,7 +212,7 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
             count_greater_corr = n_bootstraps - indices
             p_corrected = (count_greater_corr + 1) / (n_bootstraps + 1)
             
-            return observed_check, p_corrected, p_uncorrected
+            return observed_check, p_corrected, p_uncorrected, null_dist_maps if save_permutations else None
             
 
             
@@ -235,7 +235,7 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
             p_corrected_flat = np.zeros_like(p_flat)
             p_corrected_flat[sorted_indices] = q_vals
             
-            return observed_check, p_corrected_flat, p_uncorrected
+            return observed_check, p_corrected_flat, p_uncorrected, null_dist_maps if save_permutations else None
 
         elif fwe_method == 'bonferroni':
             print("Applying Bonferroni correction...")

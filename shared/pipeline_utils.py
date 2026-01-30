@@ -473,3 +473,58 @@ def _compute_tfce_single_direction(data, mask, E, H, dh, direction='positive'):
             tfce_map[cluster_mask] += contribution
     
     return tfce_map
+
+def apply_fdr(p_values, alpha=0.05):
+    """
+    Apply FDR correction (Benjamini-Hochberg) to p-values.
+    """
+    p_flat = np.asarray(p_values).flatten()
+    m = len(p_flat)
+    
+    # Handle NaNs: mask them out
+    mask = ~np.isnan(p_flat)
+    p_valid = p_flat[mask]
+    m_valid = len(p_valid)
+    
+    if m_valid == 0:
+        return np.nan * np.ones_like(p_values), np.zeros_like(p_values, dtype=bool)
+    
+    # Sort p-values
+    sort_inds = np.argsort(p_valid)
+    p_sorted = p_valid[sort_inds]
+    
+    # Calculate q-values using BH procedure
+    ranks = np.arange(1, m_valid + 1)
+    q_valid = p_sorted * m_valid / ranks
+    
+    # Ensure monotonicity: q_i = min(q_i, q_{i+1}) backwards
+    q_valid = np.minimum.accumulate(q_valid[::-1])[::-1]
+    q_valid = np.minimum(q_valid, 1.0)
+    
+    # Map back to original order
+    q_flat = np.nan * np.ones(m)
+    reject_flat = np.zeros(m, dtype=bool)
+    
+    q_valid_unsorted = np.zeros(m_valid)
+    q_valid_unsorted[sort_inds] = q_valid
+    
+    q_flat[mask] = q_valid_unsorted
+    reject_flat[mask] = q_flat[mask] < alpha
+    
+    return q_flat.reshape(np.asarray(p_values).shape), reject_flat.reshape(np.asarray(p_values).shape)
+
+def apply_bonferroni(p_values, alpha=0.05):
+    """
+    Apply Bonferroni correction to p-values.
+    """
+    p_flat = np.asarray(p_values).flatten()
+    mask = ~np.isnan(p_flat)
+    n_tests = np.sum(mask)
+    
+    p_corrected = np.nan * np.ones_like(p_flat)
+    p_corrected[mask] = p_flat[mask] * n_tests
+    p_corrected = np.minimum(p_corrected, 1.0)
+    
+    reject = p_corrected < alpha
+    return p_corrected.reshape(np.asarray(p_values).shape), reject.reshape(np.asarray(p_values).shape)
+
