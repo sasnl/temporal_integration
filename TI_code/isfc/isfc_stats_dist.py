@@ -6,16 +6,18 @@ import nibabel as nib
 from scipy.stats import ttest_1samp
 from brainiak.utils.utils import phase_randomize
 from joblib import Parallel, delayed
+from dask.distributed import progress
+
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TI_CODE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 if TI_CODE_DIR not in sys.path:
     sys.path.insert(0, TI_CODE_DIR)
 
-from shared import config
-print("USING CONFIG:", config.__file__, flush=True)
+from isfc import config
+print(f"CONFIG MODULE FILE: {os.path.abspath(config.__file__)}", flush=True)
 
-from shared.pipeline_utils import (
+from isfc.pipeline_utils_dist import (
     load_mask,
     load_data,
     save_map,
@@ -25,39 +27,12 @@ from shared.pipeline_utils import (
     apply_cluster_threshold,
     apply_tfce,
 )
-from isfc_compute import run_isfc_computation
 
-def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, seed):
-    rng = np.random.RandomState(seed)
-    indices = rng.randint(0, n_samples, size=n_samples)
-    sample = data_centered[:, indices]
-    perm_mean = np.nanmean(sample, axis=1)
-    
-    if use_tfce:
-        # Apply TFCE to permuted map
-        perm_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
-        perm_mean_3d[mask_3d] = perm_mean
-        perm_mean_3d = apply_tfce(perm_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
-        # Return Max-Statistic for FWER correction
-        return np.max(np.abs(perm_mean_3d))
-    else:
-        return perm_mean
+from isfc.isfc_compute_dist import run_isfc_computation
 
-def _run_phaseshift_iter(i, obs_seed_ts, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
-    # Generate surrogate seed by phase randomizing the OBSERVED seed
-    surr_seed_ts = phase_randomize(obs_seed_ts, voxelwise=False, random_state=seed)
-    
-    surr_raw, surr_z = run_isfc_computation(group_data, surr_seed_ts, pairwise=False, chunk_size=chunk_size)
-    null_mean = np.nanmean(surr_z, axis=1) # Mean over subjects
-    
-    if use_tfce:
-        # FWER Correction: Return max statistic
-        null_mean_3d = np.zeros(mask.shape, dtype=np.float32)
-        null_mean_3d[mask] = null_mean
-        null_mean_3d = apply_tfce(null_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
-        return np.max(np.abs(null_mean_3d))
-    else:
-        return null_mean
+from dask_jobqueue import SLURMCluster
+from distributed import Client,LocalCluster
+from dask import delayed as dask_delayed
 
 
 def parse_args():
@@ -87,6 +62,10 @@ def parse_args():
     parser.add_argument('--seed_z', type=float, help='Seed Z (Required for Phase Shift)')
     parser.add_argument('--seed_radius', type=float, default=5, help='Seed Radius (Required for Phase Shift)')
     parser.add_argument('--seed_file', type=str, help='Seed File (Optional for Phase Shift)')
+    parser.add_argument("--checkpoint_every", type=int, default=25,
+                        help="Save phaseshift checkpoint every N permutations")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume phaseshift from existing checkpoint in output_dir")
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
@@ -95,9 +74,45 @@ def parse_args():
                         help=f'Output directory (default: {config.OUTPUT_DIR})')
     parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
                         help=f'Path to mask file (default: {config.MASK_FILE})')
-    parser.add_argument('--chunk_size', type=int, default=300000,
+    parser.add_argument('--chunk_size', type=int, default=1000,
                         help=f'Chunk size (default: {config.CHUNK_SIZE})')
+    parser.add_argument("--isfc_method",type=str,choices=["loo", "pairwise"],default="loo",
+        help="ISFC mode for phaseshift stats, also used to namespace checkpoints and null maps")
+
     return parser.parse_args()
+
+def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, seed):
+    rng = np.random.RandomState(seed)
+    indices = rng.randint(0, n_samples, size=n_samples)
+    sample = data_centered[:, indices]
+    perm_mean = np.nanmean(sample, axis=1)
+    
+    if use_tfce:
+        # Apply TFCE to permuted map
+        perm_mean_3d = np.zeros(mask_3d.shape, dtype=np.float32)
+        perm_mean_3d[mask_3d] = perm_mean
+        perm_mean_3d = apply_tfce(perm_mean_3d, mask_3d, E=tfce_E, H=tfce_H, two_sided=True)
+        # Return Max-Statistic for FWER correction
+        return np.max(np.abs(perm_mean_3d))
+    else:
+        return perm_mean
+
+def _run_phaseshift_iter(i, obs_seed_ts, group_data_path, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
+    # Generate surrogate seed by phase randomizing the OBSERVED seed
+    group_data=np.load(group_data_path,mmap_mode="r")
+    surr_seed_ts = phase_randomize(obs_seed_ts, voxelwise=False, random_state=seed)
+    
+    surr_raw, surr_z = run_isfc_computation(group_data, surr_seed_ts, pairwise=False, chunk_size=chunk_size)
+    null_mean = np.nanmean(surr_z, axis=1) # Mean over subjects
+    
+    if use_tfce:
+        # FWER Correction: Return max statistic
+        null_mean_3d = np.zeros(mask.shape, dtype=np.float32)
+        null_mean_3d[mask] = null_mean
+        null_mean_3d = apply_tfce(null_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
+        return np.max(np.abs(null_mean_3d))
+    else:
+        return null_mean
 
 def run_ttest(data_4d):
     """
@@ -166,7 +181,7 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
     return observed_mean, p_values
 
 
-def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file, chunk_size=300000,seed_file=None, use_tfce=False, tfce_E=0.5, tfce_H=2.0):
+def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file,output_dir, chunk_size=config.CHUNK_SIZE,seed_file=None, use_tfce=False, tfce_E=0.5, tfce_H=2.0,checkpoint_every=25,resume=False):
     """
     Run Phase Shift randomization.
     
@@ -180,19 +195,31 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
         TFCE height parameter
     """
     print(f"Running Phase Shift (n={n_perms}, chunk_size={chunk_size})...")
-    
+    isfc_method_dir= os.path.normpath(output_dir).split(os.sep)[-1]
+
     mask, affine = load_mask(mask_file, roi_id=roi_id)
     if np.sum(mask) == 0: raise ValueError("Empty mask")
-    group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
-    if group_data is None: raise ValueError("No data")
-    
-    if seed_file:
-         seed_mask_data, _ = load_mask(seed_file)
-         if seed_mask_data.shape != mask.shape:
-             raise ValueError("Seed file shape mismatch")
-         seed_mask = seed_mask_data > 0
+
+    # group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
+    group_data_path = os.path.join(output_dir, f"group_data_{condition}.npy")
+    print(group_data_path)
+
+    if not os.path.exists(group_data_path):
+        group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
+        if group_data is None:
+            raise ValueError("No data")
+        np.save(group_data_path, group_data)
     else:
-         seed_mask = get_seed_mask(mask.shape, affine, seed_coords, seed_radius)
+        group_data = np.load(group_data_path)
+
+    if seed_file:
+        seed_mask_data, _ = load_mask(seed_file)
+        if seed_mask_data.shape != mask.shape:
+            raise ValueError("Seed file shape mismatch")
+        seed_mask = seed_mask_data > 0
+    else:
+        seed_mask = get_seed_mask(mask.shape, affine, seed_coords, seed_radius)
+
          
     obs_seed_ts = load_seed_data(group_data, seed_mask, mask)
     
@@ -202,7 +229,8 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
     print("  Computing Observed ISFC...")
     obs_isfc_raw, obs_isfc_z = run_isfc_computation(group_data, obs_seed_ts, pairwise=False, chunk_size=chunk_size)
     obs_mean_z = np.nanmean(obs_isfc_z, axis=1) # (V,)
-    
+    n_voxels = int(obs_mean_z.shape[0])
+
     if use_tfce:
         # Apply TFCE to observed map
         obs_mean_z_3d = np.zeros(mask.shape, dtype=np.float32)
@@ -210,30 +238,157 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
         obs_mean_z_3d = apply_tfce(obs_mean_z_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
         obs_mean_z = obs_mean_z_3d[mask]
     
-    # 2. Null Distribution (Parallel)
-    results = Parallel(n_jobs=-1, verbose=5)(
-        delayed(_run_phaseshift_iter)(
-            i, obs_seed_ts, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i
-        ) for i in range(n_perms)
-    )
+    cluster=SLURMCluster(account='menon',
+    queue='menon,owners,normal',
+    processes=1,
+    cores=1,
+    memory='64GB',
+    local_directory='/scratch/users/daelsaid/',
+    walltime='10:00:00',
+    death_timeout=600,)
+    # job_script_prologue=["export PATH=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/isc_env/bin:$PATH",
+    # f"export PYTHONPATH={TI_CODE_DIR}:$PYTHONPATH",
+    # "export OMP_NUM_THREADS=1",
+    # "export MKL_NUM_THREADS=1",
+    # "export OPENBLAS_NUM_THREADS=1",
+    # "export NUMEXPR_NUM_THREADS=1",
+    # "export VECLIB_MAXIMUM_THREADS=1"])
+    cluster.scale(jobs=2)
+
+    #cluster = LocalCluster(n_workers=1, threads_per_worker=8)
+    client=Client(cluster)
     
+    client.upload_file('../isfc/config.py')
+    client.upload_file('../isfc/pipeline_utils_dist.py')
+    client.wait_for_workers(1)
+    client.run(lambda: __import__("os").environ.get("SLURM_MEM_PER_NODE", "no_slurm_mem"))
+
+    if output_dir is None:
+        raise ValueError("output_dir is required for checkpointing and resume")
+ 
+    if isfc_method_dir not in ("loo", "pairwise"):
+        raise ValueError(f"Unexpected isfc_method: {isfc_method_dir}")
+
+    ckpt_name = f"isfc_{condition}_phaseshift_{isfc_method_dir}"
+    run_tag = ckpt_name
+
+    nullmaps_dir = os.path.join(output_dir, f"null_maps_{condition}", run_tag)
+    print(nullmaps_dir)
+    os.makedirs(nullmaps_dir, exist_ok=True)
+
+
+    if roi_id is not None:
+        ckpt_name += f"_roi-{roi_id}"
     if use_tfce:
-        # FWER Correction
-        null_max_stats = np.array(results)
-        p_values = (np.sum(null_max_stats[np.newaxis, :] >= np.abs(obs_mean_z[:, np.newaxis]), axis=1) + 1) / (n_perms + 1)
+        ckpt_name += "_tfce"
+    ckpt_path = os.path.join(output_dir, f"{ckpt_name}_ckpt.npz")
+
+    completed = 0
+
+    if use_tfce:
+        null_max_stats = []
     else:
-         # Voxel-wise
-         null_means = np.array(results).T
-         count = np.sum(np.abs(null_means) >= np.abs(obs_mean_z[:, np.newaxis]), axis=1)
-         p_values = (count + 1) / (n_perms + 1)
-    
-    # Convert back to 3D for return
+        count_greater = np.zeros(n_voxels, dtype=np.int32)
+        abs_obs = np.abs(obs_mean_z).astype(np.float32)
+
+    expected_meta = {
+        "condition": condition,
+        "roi_id": roi_id,
+        "chunk_size": int(chunk_size),
+        "use_tfce": bool(use_tfce),
+        "tfce_E": float(tfce_E),
+        "tfce_H": float(tfce_H),
+        "n_voxels": int(n_voxels),
+        "n_perms": int(n_perms),
+        "seed_coords": tuple(seed_coords) if seed_coords is not None else None,
+        "seed_radius": float(seed_radius) if seed_radius is not None else None,
+        "seed_file": os.path.abspath(seed_file) if seed_file else None,
+        "isfc_method_dir":str(isfc_method_dir)
+
+    }
+
+    if resume and os.path.exists(ckpt_path):
+        ck = np.load(ckpt_path, allow_pickle=True)
+        completed = int(ck["completed"])
+        meta = ck["meta"].item()
+
+        if meta != expected_meta:
+            raise ValueError(f"Checkpoint meta mismatch.\nFound: {meta}\nExpected: {expected_meta}")
+
+        if use_tfce:
+            null_max_stats = ck["null_max_stats"].astype(np.float32).tolist()
+        else:
+            count_greater = ck["count_greater"].astype(np.int32)
+
+        print(f"Resuming from checkpoint {ckpt_path}", flush=True)
+        print(f"Completed permutations: {completed} / {n_perms}", flush=True)
+    print(f"Starting {n_perms} permutations", flush=True)
+
+    for b0 in range(completed, n_perms, checkpoint_every):
+        b1 = min(b0 + checkpoint_every, n_perms)
+        print(f"Running permutations {b0} to {b1 - 1}", flush=True)
+
+        tasks = [
+            dask_delayed(_run_phaseshift_iter)(
+                i,
+                obs_seed_ts,
+                group_data_path,
+                chunk_size,
+                use_tfce,
+                mask,
+                tfce_E,
+                tfce_H,
+                1000 + i,
+            )
+            for i in range(b0, b1)
+        ]
+
+        futures = client.compute(tasks)
+        progress(futures)
+        batch_results = client.gather(futures)
+
+        if use_tfce:
+            null_max_stats.extend([float(x) for x in batch_results])
+        else:
+            for null_mean in batch_results:
+                null_mean = null_mean.astype(np.float32)
+                count_greater += (np.abs(null_mean) >= abs_obs).astype(np.int32)
+
+        completed = b1
+
+        if use_tfce:
+            np.savez(
+                ckpt_path,
+                completed=completed,
+                null_max_stats=np.array(null_max_stats, dtype=np.float32),
+                meta=expected_meta,
+            )
+        else:
+            np.savez(
+                ckpt_path,
+                completed=completed,
+                count_greater=count_greater,
+                meta=expected_meta,
+            )
+
+        print(f"Saved checkpoint at {completed}: {ckpt_path}", flush=True)
+
+    # compute p values from checkpoint accumulators
+    if use_tfce:
+        null_max_arr = np.array(null_max_stats, dtype=np.float32)
+        p_values = (
+            (np.sum(null_max_arr[np.newaxis, :] >= np.abs(obs_mean_z[:, np.newaxis]), axis=1) + 1)
+            / (len(null_max_arr) + 1)
+        ).astype(np.float32)
+    else:
+        p_values = ((count_greater + 1) / (completed + 1)).astype(np.float32)
+
     obs_mean_z_3d = np.zeros(mask.shape, dtype=np.float32)
     obs_mean_z_3d[mask] = obs_mean_z
-    
+
     p_values_3d = np.ones(mask.shape, dtype=np.float32)
     p_values_3d[mask] = p_values
-    
+
     return obs_mean_z_3d, p_values_3d, mask, affine
 
 def main():
@@ -245,13 +400,15 @@ def main():
     data_dir = args.data_dir
     mask_file = args.mask_file
     chunk_size = args.chunk_size
-    
+    isfc_method = args.isfc_method
+
     print(f"--- Step 2: ISFC Statistics ---")
     print(f"Method: {method}")
     print(f"Threshold: {threshold}")
     print(f"Output Dir: {output_dir}")
     print(f"Data Dir: {data_dir}")
     print(f"Chunk Size: {chunk_size}")
+    print(f"ISFC Mode: {isfc_method}")
 
     # ... (initialization) ...
     
@@ -280,11 +437,16 @@ def main():
         else:
              raise ValueError("Phaseshift requires --seed_file OR --seed_x/y/z")
              
+        # mean_map, p_values, mask_data, mask_affine = run_phaseshift(
+        #     args.condition, args.roi_id, seed_coords, args.seed_radius, args.n_perms, 
+        #     data_dir=data_dir, mask_file=mask_file, output_dir=output_dir, chunk_size=chunk_size, seed_file=args.seed_file,use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H,checkpoint_every=args.checkpoint_every,resume=args.resume)
+        # output_dir = os.path.join(args.output_dir,args.condition,isfc_method)
         mean_map, p_values, mask_data, mask_affine = run_phaseshift(
-            args.condition, args.roi_id, seed_coords, args.seed_radius, args.n_perms, 
-            data_dir=data_dir, mask_file=mask_file, chunk_size=chunk_size, seed_file=args.seed_file,
-            use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H
-        )
+            args.condition, args.roi_id, seed_coords, args.seed_radius, args.n_perms,
+            data_dir=data_dir, mask_file=mask_file, output_dir=output_dir, chunk_size=chunk_size,
+            seed_file=args.seed_file, use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H,
+            checkpoint_every=args.checkpoint_every, resume=args.resume)
+
         base_name = f"isfc_{args.condition}_{method}{seed_suffix}"
 
         

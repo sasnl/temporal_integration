@@ -96,7 +96,7 @@ def run_isfc_computation(data, seed_ts, pairwise=False, chunk_size=None):
         end_idx = min((i + 1) * chunk_size, n_voxels)
         chunks.append(data[:, start_idx:end_idx, :])
         
-    results = Parallel(n_jobs=-1, verbose=5)(
+    results = Parallel(n_jobs=1, verbose=5)(
         delayed(compute_isfc_chunk)(chunk, seed_ts, pairwise) for chunk in chunks
     )
     
@@ -161,14 +161,37 @@ def main():
 
     # seed_tag = "seedfile" if seed_file else f"seed_{seed_coords[0]}_{seed_coords[1]}_{seed_coords[2]}_r{seed_radius}"
     group_data_path = os.path.join(output_dir, f"group_data_{condition}_{seed_tag}.npy")
-
+    print(group_data_path)
     if not os.path.exists(group_data_path):
         group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
         if group_data is None:
             raise ValueError("No data loaded")
         np.save(group_data_path, group_data)
     else:
-        group_data = np.load(group_data_path)
+        group_data = np.load(group_data_path, mmap_mode="r")
+
+
+
+    # seed_tag = f"seed_{int(args.seed_x)}_{int(args.seed_y)}_{int(args.seed_z)}_r{int(args.seed_radius)}"
+
+    # group_data_path_new = os.path.join(output_dir, condition, method, f"group_data_{condition}.npy")
+    # group_data_path_old = os.path.join(output_dir, f"group_data_{condition}_{seed_tag}.npy")
+
+    # if os.path.exists(group_data_path_new):
+    #     group_data_path = group_data_path_new
+    # elif os.path.exists(group_data_path_old):
+    #     group_data_path = group_data_path_old
+    # else:
+    #     group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
+    #     if group_data is None:
+    #         raise ValueError("No data loaded")
+    #     os.makedirs(os.path.dirname(group_data_path_new), exist_ok=True)
+    #     np.save(group_data_path_new, group_data)
+    #     group_data_path = group_data_path_new
+
+    # group_data = np.load(group_data_path, mmap_mode="r")
+    # print(f"Using group_data_path: {group_data_path}", flush=True)
+
 
     start_time = time.time()
     
@@ -192,7 +215,17 @@ def main():
         seed_mask = get_seed_mask(mask.shape, affine, seed_coords, seed_radius)
         seed_name = f"seed{int(seed_coords[0])}_{int(seed_coords[1])}_{int(seed_coords[2])}_r{int(seed_radius)}"
     
-    seed_ts = load_seed_data(group_data, seed_mask, mask) # (TR, 1, S)
+    
+    seed_data_path = os.path.join(output_dir, f"seed_data_{condition}_{seed_tag}.npy")
+    print(seed_data_path)
+    if not os.path.exists(seed_data_path):
+        seed_ts = load_seed_data(group_data, seed_mask, mask) # (TR, 1, S)
+
+        if seed_ts is None:
+            raise ValueError("No seed loaded")
+        np.save(seed_data_path, seed_ts)
+    else:
+        seed_ = np.load(seed_data_path, mmap_mode="r")
     print(f"Seed timecourse loaded: {seed_ts.shape}")
     
     # Compute Raw and Z ISFC

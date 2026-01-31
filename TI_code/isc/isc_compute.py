@@ -8,8 +8,10 @@ TI_CODE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 if TI_CODE_DIR not in sys.path:
     sys.path.insert(0, TI_CODE_DIR)
 
-from shared import config
-from shared.pipeline_utils import load_mask, load_data, save_map, save_plot, run_isc_computation
+from isc import config
+print(f"CONFIG MODULE FILE: {os.path.abspath(config.__file__)}", flush=True)
+
+from isc.pipeline_utils_dist import load_mask, load_data, save_map, save_plot, run_isc_computation
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Step 1: Compute ISC Maps (Raw and Fisher-Z)')
@@ -64,16 +66,16 @@ def main():
         print("Error: Empty mask.")
         return
 
-    # Load Data
-    if not os.path.exists(os.path.join(output_dir,'group_data.npy')):    
-        group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
+    group_data_path = os.path.join(output_dir, f"group_data_{condition}.npy")
+
+    if not os.path.exists(group_data_path):
+        group_data = load_data(condition, config.SUBJECTS, mask, data_dir)  # or config.SUBJECTS
         if group_data is None:
-            print("Error: No data loaded.")
-            return
-        np.save(os.path.join(output_dir,'group_data.npy'),group_data)
+            raise ValueError("No data loaded")
+        np.save(group_data_path, group_data)
     else:
-        group_data=np.load(os.path.join(output_dir,'group_data.npy'))
-    
+        group_data = np.load(group_data_path, mmap_mode="r")
+
     start_time = time.time()
     
     # Compuete Raw ISC and Fisher-Z

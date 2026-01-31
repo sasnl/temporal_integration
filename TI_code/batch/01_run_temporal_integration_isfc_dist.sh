@@ -69,7 +69,7 @@ echo "Expanded argv:"
 printf "  %q\n" "${PARAM_ARR[@]}"
 
 #run script 
-${env_path}/bin/python ${code_path}/run_isfc_pipeline.py \
+${env_path}/bin/python ${code_path}/run_isfc_pipeline_dist.py \
 ${param_string} \
  "--data_dir" ${data_dir} \
  "--output_dir" ${output_dir} \

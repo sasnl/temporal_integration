@@ -48,6 +48,10 @@ def parse_args():
                         help='TFCE extent parameter (default: 0.5)')
     parser.add_argument('--tfce_H', type=float, default=2.0,
                         help='TFCE height parameter (default: 2.0)')
+    parser.add_argument("--checkpoint_every", type=int, default=25,
+                        help="Save phaseshift checkpoint every N permutations")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume phaseshift from existing checkpoint in output_dir")
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
@@ -58,7 +62,7 @@ def parse_args():
                         help=f'Path to mask file (default: {config.MASK_FILE})')
     parser.add_argument('--chunk_size', type=int, default=config.CHUNK_SIZE,
                         help=f'Chunk size (default: {config.CHUNK_SIZE})')
-    parser.add_argument("--run_output_dir",type=str,default=None,help="Optional per run output directory. If not provided, it is derived from output_dir, condition, isfc_method, and seed.")
+    
     return parser.parse_args()
 
 def main():
@@ -81,7 +85,7 @@ def main():
     
     # 1. Run Computation
     print("\n=== STEP 1: ISFC COMPUTATION ===")
-    compute_script = os.path.join(script_dir, 'isfc_compute_dist.py')
+    compute_script = os.path.join(script_dir, 'isfc_compute.py')
     
     compute_cmd = [
         python_exec, compute_script,
@@ -121,20 +125,10 @@ def main():
     seed_suffix = f"_{seed_name}"
     base_name = f"isfc_{args.condition}_{args.isfc_method}{seed_suffix}{roi_suffix}"
     output_dir = os.path.join(args.output_dir, seed_name)
-    root_output_dir = args.output_dir
-
-    run_dir = os.path.join(args.output_dir, args.condition, args.isfc_method, seed_name)
-
-    # Decide where this run writes outputs
-    if args.run_output_dir is not None:
-        run_dir = args.run_output_dir
-    else:
-        run_dir = os.path.join(root_output_dir, args.condition, args.isfc_method, seed_name)
-
     # Use Z-score map for T-test/Bootstrap
     input_map = os.path.join(output_dir, f"{base_name}_desc-zscore.nii.gz")
+    
     stats_script = os.path.join(script_dir, 'isfc_stats_dist.py')
-
     stats_cmd = [
         python_exec, stats_script,
         "--method", args.stats_method,

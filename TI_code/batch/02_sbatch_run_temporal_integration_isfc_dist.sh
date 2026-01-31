@@ -9,7 +9,7 @@ mem=$5
 
 usage() {
     echo "Usage:"
-    echo " - Designed for whole-brain ISFC with high memory usage"
+    echo "  Designed for whole brain ISFC with high memory usage"
     echo "  sbatch 02_sbatch_temporal_integration_isfc.sh \\"
     echo "         <param_file> <code_dir> <data_dir> <output_dir> <mem_gb>"
     echo ""
@@ -24,18 +24,17 @@ usage() {
     echo "  <code_dir>     Path to TI_code/isfc directory"
     echo "  <data_dir>     Directory containing condition folders"
     echo "  <output_dir>   Output directory for ISFC results and logs"
-    echo "  <mem_gb>       Memory per job in GB (e.g. 64)"
+    echo "  <mem_gb>       Memory per job in GB (example 64)"
     echo ""
     echo "Example:"
-    echo " bash 02_sbatch_temporal_integration_isfc.sh \\"
-    echo "   isfc_params_example.txt \\"
-    echo "   /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isfc \\"
-    echo "   /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf \\"
-    echo "   /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf/isfc_analysis_1000_permutations_hpc \\"
-    echo "   64"
+    echo "  bash 02_sbatch_temporal_integration_isfc_dist.sh \\"
+    echo "    isfc_params_example.txt \\"
+    echo "    /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isfc \\"
+    echo "    /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf \\"
+    echo "    /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/results/post_processed_wholebrain/filtered/06-2025/td/hpf/isfc_analysis_1000_permutations_hpc \\"
+    echo "    64"
     exit 1
 }
-
 
 if [ "$#" -ne 5 ]; then
     usage
@@ -60,24 +59,41 @@ for lines in `cat $params_txt_file`; do
     params=`echo "--condition ${condition} --isfc_method ${isfc_method} --stats_method ${stats_method} --seed_x ${seed_x} --seed_y ${seed_y} --seed_z ${seed_z} --seed_radius ${seed_radius} --n_perms ${n_perms} --p_threshold ${p_from_file}"`
     output_dir_thisrun="$output_dir"
 
-    if [ "$tfce_flag" = "use_tfce" ]; then
-        params="${params} --use_tfce"
-        output_dir_thisrun="${output_dir}_thresholded"
-    fi
+	if [ "$tfce_flag" = "use_tfce" ]; then
+		params="${params} --use_tfce"
+	fi
 
-	if [ "${stats_method}" = "phaseshift" ]; then
+	if [ "${isfc_method}" = "loo" ]; then
 		params="${params} --checkpoint_every 25"
-		output_dir_thisrun="${output_dir}_phaseshift"
+		output_dir_thisrun="${output_dir}_loo"
 	fi
 
-	if [ "${stats_method}" = "phaseshift" ] && [ "${tfce_flag}" = "use_tfce" ]; then
-		output_dir_thisrun="${output_dir}_phaseshift_tfce"
+	if [ "${isfc_method}" = "loo" ] && [ "${tfce_flag}" = "use_tfce" ]; then
+		output_dir_thisrun="${output_dir}_loo_tfce"
 	fi
 
+	if [ "${isfc_method}" = "pairwise" ]; then
+		params="${params} --checkpoint_every 25"
+		output_dir_thisrun="${output_dir}_pairwise"
+	fi
 
-	if [ "${stats_method}" = "phaseshift" ] && [ "${RESUME:-0}" -eq 1 ]; then
+	if [ "${isfc_method}" = "pairwise" ] && [ "${tfce_flag}" = "use_tfce" ]; then
+		output_dir_thisrun="${output_dir}_pairwise_tfce"
+	fi
+
+	if [ "${isfc_method}" = "loo" ] && [ "${RESUME:-0}" -eq 1 ]; then
 		params="${params} --resume"
 	fi
+
+	if [ "${isfc_method}" = "pairwise" ] && [ "${RESUME:-0}" -eq 1 ]; then
+		params="${params} --resume"
+	fi
+
+
+	echo $isfc_method; 
+	echo $output_dir_thisrun
+	echo $params;
+
 
     echo '#!/bin/bash' > TI_isfc.sbatch;
 	echo 'echo "SLURM_JOB_ID=$SLURM_JOB_ID"' >> TI_isfc.sbatch
@@ -100,6 +116,6 @@ for lines in `cat $params_txt_file`; do
     \"${data_dir}\" \
     \"${output_dir_thisrun}\" \
     \"${p_from_file}\"" >> TI_isfc.sbatch
-    sbatch -p menon,owners,normal -c 2 --mem=${mem}G -t 6:00:00 -o "${output_dir_thisrun}/temporal_integration_${condition}_seed_${seed_x}_${seed_y}_${seed_z}_${p_from_file}_${tfce_flag}_%j.log" TI_isfc.sbatch;
+    sbatch -p menon,owners,normal -c 2 --mem=${mem}G -t 12:00:00 -o "${output_dir_thisrun}/temporal_integration_${condition}_seed_${seed_x}_${seed_y}_${seed_z}_${p_from_file}_${tfce_flag}_%j.log" TI_isfc.sbatch;
 	cp TI_isfc.sbatch "${output_dir_thisrun}/TI_isfc_${condition}_seed_${seed_x}_${seed_y}_${seed_z}_${p_from_file}_${tfce_flag}.sbatch"
 done

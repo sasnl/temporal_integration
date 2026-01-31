@@ -7,21 +7,23 @@ import nibabel as nib
 from joblib import Parallel
 from scipy.stats import ttest_1samp
 from brainiak.utils.utils import phase_randomize
+from dask.distributed import progress
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TI_CODE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 if TI_CODE_DIR not in sys.path:
     sys.path.insert(0, TI_CODE_DIR)
 
+from isc import config
+print(f"CONFIG MODULE FILE: {os.path.abspath(config.__file__)}", flush=True)
 
-import config
-from pipeline_utils_dist import (
+from isc.pipeline_utils_dist import (
     load_mask, load_data, save_map, save_plot, run_isc_computation,
     apply_cluster_threshold, apply_tfce
 )
 
 from dask_jobqueue import SLURMCluster
-from distributed import Client
+from distributed import Client,LocalCluster
 from dask import delayed
 
 def parse_args():
@@ -46,10 +48,12 @@ def parse_args():
                         help='TFCE extent parameter (default: 0.5)')
     parser.add_argument('--tfce_H', type=float, default=2.0,
                         help='TFCE height parameter (default: 2.0)')
-    parser.add_argument("--checkpoint_every", type=int, default=25,
+    parser.add_argument("--checkpoint_every", type=int, default=1000,
                         help="Save phaseshift checkpoint every N permutations")
     parser.add_argument("--resume", action="store_true",
                         help="Resume phaseshift from existing checkpoint in output_dir")
+    parser.add_argument("--isfc_method",type=str,choices=["loo", "pairwise"],default="loo",
+        help="ISFC mode for phaseshift stats, also used to namespace checkpoints and null maps")
 
     
     # Configurable Paths
@@ -64,7 +68,7 @@ def parse_args():
     return parser.parse_args()
 
 def _run_phaseshift_iter(i, n_perms, group_data_path, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
-    group_data=np.load(group_data_path)
+    group_data=np.load(group_data_path,mmap_mode="r")
     if (i+1) % 10 == 0 or i == 0:
         print(f"Starting permutation {i+1} out of {n_perms}", flush=True)
     n_subs = group_data.shape[2]
@@ -74,7 +78,8 @@ def _run_phaseshift_iter(i, n_perms, group_data_path, chunk_size, use_tfce, mask
     shifted_data = np.zeros_like(group_data)
     for s in range(n_subs):
         shifted_data[:, :, s] = phase_randomize(group_data[:, :, s], random_state=rng)
-        
+    del group_data
+
     # Compute Null ISC
     null_raw, null_z = run_isc_computation(shifted_data, chunk_size=chunk_size)
     null_mean = np.nanmean(null_z, axis=1)
@@ -173,7 +178,7 @@ def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42, use_tfce=F
     data_centered = data_4d - np.nanmean(data_4d, axis=1, keepdims=True)
     
     # Parallelize
-    results = Parallel(n_jobs=-1, verbose=5)(
+    results = Parallel(n_jobs=1, verbose=5)(
         delayed(_run_bootstrap_iter)(
             i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, random_state + i
         ) for i in range(n_bootstraps)
@@ -195,7 +200,7 @@ def run_bootstrap_manual(data_4d, n_bootstraps=1000, random_state=42, use_tfce=F
     
 #DE added check points to be able to pick up where we left off
     
-def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, chunk_size=config.CHUNK_SIZE, use_tfce=False, tfce_E=0.5, tfce_H=2.0, checkpoint_every=100,resume=False):
+def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, chunk_size=config.CHUNK_SIZE, use_tfce=False, tfce_E=0.5, tfce_H=2.0, checkpoint_every=25,resume=False):
     """
     Run Phase Shift randomization.
     
@@ -209,7 +214,8 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
         TFCE height parameter
     """
     print(f"Running Phase Shift (n={n_perms}, chunk_size={chunk_size})...")
-    
+    isc_method_dir= os.path.normpath(output_dir).split(os.sep)[-1]
+
     mask, affine = load_mask(mask_file, roi_id=roi_id)
     if np.sum(mask) == 0: raise ValueError("Empty mask")
     
@@ -218,13 +224,17 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
     else:
         subjects = config.SUBJECTS
 
-    group_data_path=os.path.join(output_dir,'group_data.npy')
-    if not os.path.exists(group_data_path):    
+    group_data_path = os.path.join(output_dir, f"group_data_{condition}.npy")
+    print(group_data_path)
+
+    if not os.path.exists(group_data_path):
         group_data = load_data(condition, subjects, mask, data_dir)
-        if group_data is None: raise ValueError("No data")   
-        np.save(group_data_path,group_data)
+        if group_data is None:
+            raise ValueError("No data")
+        np.save(group_data_path, group_data)
     else:
-        group_data=np.load(group_data_path)
+        group_data = np.load(group_data_path)
+
 
     n_trs, n_voxels, n_subs = group_data.shape
 
@@ -246,22 +256,47 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
     #         i, n_perms, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i
     #     ) for i in range(n_perms)
     # )
+    print("isc package dir exists:", os.path.exists(os.path.join(TI_CODE_DIR, "isc", "__init__.py")), flush=True)
 
-    cluster=SLURMCluster(account='menon',queue='menon,owners,normal',cores=4,memory='16GB',walltime='00:30:00')
-    cluster.scale(jobs=10)
+    cluster=SLURMCluster(account='menon',
+    queue='menon,owners,normal',
+    processes=1,
+    cores=1,
+    memory='64GB',
+    local_directory='/scratch/users/daelsaid/',
+    walltime='10:00:00',
+    death_timeout=600,
+    job_script_prologue=["export PATH=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/isc_env/bin:$PATH",
+    f"export PYTHONPATH={TI_CODE_DIR}:$PYTHONPATH",
+    "export OMP_NUM_THREADS=1",
+    "export MKL_NUM_THREADS=1",
+    "export OPENBLAS_NUM_THREADS=1",
+    "export NUMEXPR_NUM_THREADS=1",
+    "export VECLIB_MAXIMUM_THREADS=1"])
+    cluster.scale(jobs=20)
+    #cluster = LocalCluster(n_workers=1, threads_per_worker=8)
     client=Client(cluster)
-    client.upload_file('../shared/config.py')
-    client.upload_file('../shared/pipeline_utils_dist.py')
-
-  
+    
+    client.upload_file('../isc/config.py')
+    client.upload_file('../isc/pipeline_utils_dist.py')
+    client.wait_for_workers(6)
+    client.run(lambda: __import__("os").environ.get("SLURM_MEM_PER_NODE", "no_slurm_mem"))
 
     if output_dir is None:
         raise ValueError("output_dir is required for checkpointing and resume")
+    if isc_method_dir not in ("loo", "pairwise"):
+        raise ValueError(f"Unexpected isfc_method: {isc_method_dir}")
 
-    nullmaps_dir = os.path.join(output_dir, "null_maps")
+    nullmaps_dir = os.path.join(output_dir, "null_maps" + '_' + condition)
     os.makedirs(nullmaps_dir, exist_ok=True)
 
-    ckpt_name = f"isc_{condition}_phaseshift"
+    ckpt_name = f"isfc_{condition}_phaseshift_{isc_method_dir}"
+    run_tag = ckpt_name
+
+    nullmaps_dir = os.path.join(output_dir, f"null_maps_{condition}", run_tag)
+    print(nullmaps_dir)
+    os.makedirs(nullmaps_dir, exist_ok=True)
+
     if roi_id is not None:
         ckpt_name += f"_roi-{roi_id}"
     if use_tfce:
@@ -288,7 +323,9 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
             "use_tfce": bool(use_tfce),
             "tfce_E": float(tfce_E),
             "tfce_H": float(tfce_H),
+            "n_perms": int(n_perms),
             "n_voxels": int(n_voxels),
+            "isc_method_dir":str(isc_method_dir)
         }
         if meta != expected:
             raise ValueError(f"Checkpoint meta mismatch.\nFound: {meta}\nExpected: {expected}")
@@ -316,11 +353,12 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
         # for i in range(b0,b1):
         #     batch_results = _run_phaseshift_iter(i, n_perms, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i)
 
-        results=[delayed(_run_phaseshift_iter)(i, n_perms, group_data_path, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i) for i in range(n_perms)]
-
-        futures=client.compute(results)
-        batch_results=client.gather(futures)
-
+        tasks=[delayed(_run_phaseshift_iter)(i, n_perms, group_data_path, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i) for i in range(b0,b1)]
+        batch_results=client.compute(tasks)
+        # futures=client.persist(batch_results)
+        # results=client.gather(futures)
+        progress(batch_results)
+        batch_results=client.gather(batch_results)
         if use_tfce:
             null_max_stats.extend([float(x) for x in batch_results])
         else:
@@ -402,76 +440,6 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
     p_values_3d[mask] = p_values
     
     return obs_mean_3d, p_values_3d, mask, affine 
-# def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, chunk_size=config.CHUNK_SIZE, use_tfce=False, tfce_E=0.5, tfce_H=2.0):
-#     """
-#     Run Phase Shift randomization.
-    
-#     Parameters:
-#     -----------
-#     use_tfce : bool
-#         If True, apply TFCE transformation before computing p-values
-#     tfce_E : float
-#         TFCE extent parameter
-#     tfce_H : float
-#         TFCE height parameter
-#     """
-#     print(f"Running Phase Shift (n={n_perms}, chunk_size={chunk_size})...")
-    
-#     mask, affine = load_mask(mask_file, roi_id=roi_id)
-#     if np.sum(mask) == 0: raise ValueError("Empty mask")
-    
-#     group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
-#     if group_data is None: raise ValueError("No data")
-    
-#     n_trs, n_voxels, n_subs = group_data.shape
-    
-#     # 1. Compute Observed ISC
-#     obs_raw, obs_z = run_isc_computation(group_data, chunk_size=chunk_size)
-#     obs_mean = np.nanmean(obs_z, axis=1) # (V,)
-    
-#     if use_tfce:
-#         # Apply TFCE to observed map
-#         obs_mean_3d = np.zeros(mask.shape, dtype=np.float32)
-#         obs_mean_3d[mask] = obs_mean
-#         obs_mean_3d = apply_tfce(obs_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
-#         obs_mean = obs_mean_3d[mask]
-    
-#     # 2. Phase Randomization
-#     count_greater = np.zeros(n_voxels, dtype=int)
-    
-#     rng = np.random.RandomState(42)
-    
-#     for i in range(n_perms):
-#         if i % 10 == 0: print(f"  Permutation {i}/{n_perms}")
-        
-#         # Shift each subject
-#         shifted_data = np.zeros_like(group_data)
-#         for s in range(n_subs):
-#             shifted_data[:, :, s] = phase_randomize(group_data[:, :, s], random_state=rng)
-            
-#         # Compute Null ISC
-#         null_raw, null_z = run_isc_computation(shifted_data, chunk_size=chunk_size)
-#         null_mean = np.nanmean(null_z, axis=1)
-        
-#         if use_tfce:
-#             # Apply TFCE to permuted map
-#             null_mean_3d = np.zeros(mask.shape, dtype=np.float32)
-#             null_mean_3d[mask] = null_mean
-#             null_mean_3d = apply_tfce(null_mean_3d, mask, E=tfce_E, H=tfce_H, two_sided=True)
-#             null_mean = null_mean_3d[mask]
-        
-#         count_greater += (np.abs(null_mean) >= np.abs(obs_mean))
-        
-#     p_values = (count_greater + 1) / (n_perms + 1)
-    
-#     # Convert back to 3D for return
-#     obs_mean_3d = np.zeros(mask.shape, dtype=np.float32)
-#     obs_mean_3d[mask] = obs_mean
-    
-#     p_values_3d = np.ones(mask.shape, dtype=np.float32)
-#     p_values_3d[mask] = p_values
-    
-#     return obs_mean_3d, p_values_3d, mask, affine 
 
 def main():
     args = parse_args()

@@ -107,3 +107,52 @@ RESUME=1 bash 02_sbatch_run_temporal_integration_isc_scg.sh \
 #   --n_perms ${nperms} \
 #   --p_threshold ${pthr} \
 #   --use_tfce
+
+
+bash 01_run_temporal_integration_isc_dist.sh "/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isc" "--condition TI1_sent --isc_method loo --stats_method phaseshift --n_perms 100 --p_threshold 0.05 --use_tfce" "/scratch/users/daelsaid/updated_results/td/" "/scratch/users/daelsaid/updated_results_2026_01_29" "0.05"
+
+
+
+RESUME=1 bash 02_sbatch_run_temporal_integration_isc_dist.sh \
+isc_params_20260122_133305_tfce.txt \
+/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isc \
+/scratch/users/daelsaid/updated_results/td/ \
+/scratch/users/daelsaid/updated_results/td/isc_updated_results_2026_01_29 \
+16;
+
+
+RESUME=1 bash 02_sbatch_run_temporal_integration_isc_dist.sh \
+isc_params_20260122_133305_tfce.txt \
+/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isc \
+/scratch/users/daelsaid/updated_results/td/ \
+/scratch/users/daelsaid/updated_results/td/isc_updated_results_2026_01_29 \
+16;
+
+
+
+
+RESUME=1 bash 02_sbatch_run_temporal_integration_isfc_dist.sh \
+isfc_param_test.txt \
+/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isfc \
+/scratch/users/daelsaid/updated_results/td/ \
+/scratch/users/daelsaid/updated_results/td/isfc_updated_results_2026_01_29 \
+16;
+
+
+RESUME=0 bash 02_sbatch_run_temporal_integration_isfc_dist.sh isfc_params_20260122_133305_no_tfce.txt /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isfc /scratch/users/daelsaid/updated_results/td/ /scratch/users/daelsaid/updated_results/td/isfc_updated_results_2026_01_29 16;
+
+
+
+RESUME=1 bash 02_sbatch_run_temporal_integration_isc_dist.sh isc_params_20260122_133305_tfce.txt /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isc /scratch/users/daelsaid/updated_results/td/ /scratch/users/daelsaid/updated_results/td/isc_updated_results_2026_01_29 16;
+
+
+isfc_params_20260122_133305_no_tfce
+isc_params_20260122_133305_no_tfce
+
+
+bash 01_run_temporal_integration_isfc_dist.sh "/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isfc" "--condition TI1_orig --isc_method pairwise --stats_method phaseshift --n_perms 100 --p_threshold 0.05 --use_tfce" "/scratch/users/daelsaid/updated_results/td/" "/scratch/users/daelsaid/updated_results_2026_01_29" "0.05"
+TI1_orig,pairwise,phaseshift,0,-53,2,5,10,0.05,use_tfce
+
+
+RESUME=1 bash 02_sbatch_run_temporal_integration_isc_dist.sh isfc_param_test.txt /oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/TI_code/isfc /scratch/users/daelsaid/updated_results/td/ /scratch/users/daelsaid/updated_results/td/isfc_updated_results_2026_01_29_test 16;
+

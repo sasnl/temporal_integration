@@ -2,7 +2,7 @@ import os
 import argparse
 import numpy as np
 import time
-from brainiak.isc import isfc
+from brainiak.isc import isfc as isfc_calc
 from joblib import Parallel, delayed
 import sys
 import os
@@ -15,6 +15,7 @@ from isfc import config
 print(f"CONFIG MODULE FILE: {os.path.abspath(config.__file__)}", flush=True)
 
 from isfc.pipeline_utils_dist import load_mask, load_data, save_map, save_plot,  get_seed_mask, load_seed_data
+import ray
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Step 1: Compute ISFC Maps (Raw and Fisher-Z)')
@@ -66,7 +67,7 @@ def compute_isfc_chunk(target_chunk, seed_ts, pairwise):
     #   Actually for Seed-based ISFC, we want: Corr(Seed_Subject_i, Target_Voxels_Others_Mean).
     #   Symmetric ISFC (Seed <-> Target) is exactly what brainiak.isc.isfc does.
     
-    res = isfc(seed_ts, target_chunk, pairwise=pairwise, summary_statistic=None, vectorize_isfcs=False)
+    res = isfc_calc(seed_ts, target_chunk, pairwise=pairwise, summary_statistic=None, vectorize_isfcs=False)
     # res shape: (n_samples, 1, V_Chunk)
     
     isfc_raw = res.squeeze(axis=1) # (n_samples, V_Chunk)
@@ -77,6 +78,7 @@ def compute_isfc_chunk(target_chunk, seed_ts, pairwise):
     
     return isfc_raw, isfc_z
 
+@ray.remote
 def run_isfc_computation(data, seed_ts, pairwise=False, chunk_size=None):
     if chunk_size is None:
         chunk_size = getattr(config, "CHUNK_SIZE", 30000)
@@ -96,7 +98,7 @@ def run_isfc_computation(data, seed_ts, pairwise=False, chunk_size=None):
         end_idx = min((i + 1) * chunk_size, n_voxels)
         chunks.append(data[:, start_idx:end_idx, :])
         
-    results = Parallel(n_jobs=-1, verbose=5)(
+    results = Parallel(n_jobs=1, verbose=5)(
         delayed(compute_isfc_chunk)(chunk, seed_ts, pairwise) for chunk in chunks
     )
     
@@ -168,7 +170,30 @@ def main():
             raise ValueError("No data loaded")
         np.save(group_data_path, group_data)
     else:
-        group_data = np.load(group_data_path)
+        group_data = np.load(group_data_path, mmap_mode="r")
+
+
+
+    # seed_tag = f"seed_{int(args.seed_x)}_{int(args.seed_y)}_{int(args.seed_z)}_r{int(args.seed_radius)}"
+
+    # group_data_path_new = os.path.join(output_dir, condition, method, f"group_data_{condition}.npy")
+    # group_data_path_old = os.path.join(output_dir, f"group_data_{condition}_{seed_tag}.npy")
+
+    # if os.path.exists(group_data_path_new):
+    #     group_data_path = group_data_path_new
+    # elif os.path.exists(group_data_path_old):
+    #     group_data_path = group_data_path_old
+    # else:
+    #     group_data = load_data(condition, config.SUBJECTS, mask, data_dir)
+    #     if group_data is None:
+    #         raise ValueError("No data loaded")
+    #     os.makedirs(os.path.dirname(group_data_path_new), exist_ok=True)
+    #     np.save(group_data_path_new, group_data)
+    #     group_data_path = group_data_path_new
+
+    # group_data = np.load(group_data_path, mmap_mode="r")
+    # print(f"Using group_data_path: {group_data_path}", flush=True)
+
 
     start_time = time.time()
     
@@ -196,8 +221,9 @@ def main():
     print(f"Seed timecourse loaded: {seed_ts.shape}")
     
     # Compute Raw and Z ISFC
-    isfc_raw, isfc_z = run_isfc_computation(group_data, seed_ts, pairwise=pairwise, chunk_size=chunk_size)
-    
+    #
+    # isfc_raw, isfc_z = run_isfc_computation(group_data, seed_ts, pairwise=pairwise, chunk_size=chunk_size)
+    isfc_raw, isfc_z = ray.get(run_isfc_computation.remote(group_data, seed_ts, pairwise=pairwise, chunk_size=chunk_size))
     # Save Maps
     roi_suffix = f"_roi{roi_id}" if roi_id is not None else ""
     # Add explicit separator for seed

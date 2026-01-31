@@ -296,7 +296,7 @@ def run_isc_computation(data, pairwise=False, chunk_size=30000):
             end_idx = min((i + 1) * chunk_size, n_voxels)
             yield data[:, start_idx:end_idx, :]
     # n_jobs = int(os.environ.get("SLURM_CPUS_PER_TASK", "1"))
-    results = Parallel(n_jobs=-1,verbose=5,backend='threading')(
+    results = Parallel(n_jobs=1,verbose=5,backend='threading')(
         delayed(compute_isc_chunk)(chunk, pairwise) for chunk in _chunk_iter())
 
 

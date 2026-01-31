@@ -8,8 +8,9 @@ TI_CODE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 if TI_CODE_DIR not in sys.path:
     sys.path.insert(0, TI_CODE_DIR)
 
-from shared import config
-print("USING CONFIG:", config.__file__, flush=True)
+
+from isc import config
+print(f"CONFIG MODULE FILE: {os.path.abspath(config.__file__)}", flush=True)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Run full ISC Analysis Pipeline')
@@ -33,7 +34,7 @@ def parse_args():
                         help='TFCE extent parameter (default: 0.5)')
     parser.add_argument('--tfce_H', type=float, default=2.0,
                         help='TFCE height parameter (default: 2.0)')
-    parser.add_argument("--checkpoint_every", type=int, default=25,
+    parser.add_argument("--checkpoint_every", type=int, default=1000,
                         help="Save phaseshift checkpoint every N permutations")
     parser.add_argument("--resume", action="store_true",
                         help="Resume phaseshift from existing checkpoint in output_dir")
@@ -46,7 +47,7 @@ def parse_args():
                         help=f'Output directory (default: {config.OUTPUT_DIR})')
     parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
                         help=f'Path to mask file (default: {config.MASK_FILE})')
-    parser.add_argument('--chunk_size', type=int, default=30000,
+    parser.add_argument('--chunk_size', type=int, default=config.CHUNK_SIZE,
                         help='Chunk size for processing (default: 300000)')
     return parser.parse_args()
 

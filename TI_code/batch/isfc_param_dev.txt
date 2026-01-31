@@ -1,0 +1,1 @@
+TI1_word,pairwise,phaseshift,57,-31,5,5,2,0.05,use_tfce

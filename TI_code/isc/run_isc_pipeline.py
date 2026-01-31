@@ -8,8 +8,9 @@ TI_CODE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 if TI_CODE_DIR not in sys.path:
     sys.path.insert(0, TI_CODE_DIR)
 
-from shared import config
-print("USING CONFIG:", config.__file__, flush=True)
+
+from isc import config
+print(f"CONFIG MODULE FILE: {os.path.abspath(config.__file__)}", flush=True)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Run full ISC Analysis Pipeline')
@@ -115,7 +116,7 @@ def main():
     
     if args.roi_id is not None:
         cmd_step2.extend(['--roi_id', str(args.roi_id)])
-        
+    
     if args.stats_method == 'phaseshift':
         cmd_step2.extend(['--condition', args.condition])
         cmd_step2.extend(['--checkpoint_every', str(args.checkpoint_every)])

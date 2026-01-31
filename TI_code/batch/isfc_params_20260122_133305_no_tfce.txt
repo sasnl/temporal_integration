@@ -16,3 +16,4 @@ TI1_sent,loo,phaseshift,57,-31,5,5,1000,0.05
 TI1_sent,pairwise,phaseshift,57,-31,5,5,1000,0.05
 TI1_word,loo,phaseshift,57,-31,5,5,1000,0.05
 TI1_word,pairwise,phaseshift,57,-31,5,5,1000,0.05
+
