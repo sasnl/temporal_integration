@@ -120,6 +120,7 @@ def main():
     if args.stats_method == 'phaseshift':
         cmd_step2.extend(['--condition', args.condition])
         cmd_step2.extend(['--checkpoint_every', str(args.checkpoint_every)])
+        cmd_step2.extend(['--isc_method', args.isc_method])
         if args.resume:
             cmd_step2.append('--resume')
     else:

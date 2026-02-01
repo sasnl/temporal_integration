@@ -242,12 +242,14 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
 
 
     if output_dir is None:
-        raise ValueError("output_dir is required for checkpointing and resume")
-
-    nullmaps_dir = os.path.join(output_dir, "null_maps")
+            raise ValueError("output_dir is required for checkpointing and resume")
+    
+    # Include method in paths to prevent overwriting between loo and pairwise runs
+    isc_method_str = "pairwise" if pairwise else "loo"
+    nullmaps_dir = os.path.join(output_dir, f"null_maps_{isc_method_str}")
     os.makedirs(nullmaps_dir, exist_ok=True)
 
-    ckpt_name = f"isc_{condition}_phaseshift"
+    ckpt_name = f"isc_{condition}_phaseshift_{isc_method_str}"
     if roi_id is not None:
         ckpt_name += f"_roi-{roi_id}"
     if use_tfce:
@@ -486,9 +488,8 @@ def main():
             data_dir=data_dir, mask_file=mask_file,   output_dir=output_dir, chunk_size=chunk_size,
             use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H,checkpoint_every=args.checkpoint_every,resume=args.resume,  
         )
-        
-        # Base name for output
-        base_name = f"isc_{args.condition}_{method}"
+        # Base name for output - include isc_method to prevent overwriting
+        base_name = f"isc_{args.condition}_{isc_method}_{method}"
         
     else:
         # Map-based methods

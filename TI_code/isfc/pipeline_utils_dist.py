@@ -7,6 +7,82 @@ import matplotlib.pyplot as plt
 from brainiak.isc import isc
 from joblib import Parallel, delayed
 from scipy.ndimage import label
+from brainiak.isc import isfc as isfc_calc
+
+def compute_isfc_chunk(target_chunk, seed_ts, pairwise):
+    """
+    Computes ISFC between seed_ts and target_chunk.
+    
+    target_chunk: (TR, V_Chunk, n_subjects)
+    seed_ts: (TR, 1, n_subjects)
+    pairwise: bool
+    
+    Returns: 
+    - if pairwise=False (LOO): (n_subjects, 1, V_Chunk) -> squeeze to (n_subjects, V_Chunk)
+    - if pairwise=True: (n_pairs, 1, V_Chunk) -> squeeze to (n_pairs, V_Chunk)
+    """
+    # brainiak.isc.isfc computes correlation between dataset A and dataset B
+    # If pairwise=False, it does Leave-One-Out ISFC:
+    #   Corr(Subject_i_Seed, Mean_Others_Target)
+    #   Wait, BrainIAK ISFC(loo) computes Corr(Subject_i_A, Mean_Others_B) AND Corr(Subject_i_B, Mean_Others_A) usually? 
+    #   Actually brainiak.isc.isfc with summary_statistic=None returns the vector of Correlations.
+    #   Let's check documentation logic:
+    #   ISFC(data, targets) where data=(TR, V1, S), targets=(TR, V2, S).
+    #   LOO: For each subject S_i, computes corr between S_i[data] and Mean(Others[targets])
+    #   AND S_i[targets] and Mean(Others[data]). 
+    #   It returns average of these two? Or just one?
+    #   Actually for Seed-based ISFC, we want: Corr(Seed_Subject_i, Target_Voxels_Others_Mean).
+    #   Symmetric ISFC (Seed <-> Target) is exactly what brainiak.isc.isfc does.
+    
+    res = isfc_calc(seed_ts, target_chunk, pairwise=pairwise, summary_statistic=None, vectorize_isfcs=False)
+    # res shape: (n_samples, 1, V_Chunk)
+    
+    isfc_raw = res.squeeze(axis=1) # (n_samples, V_Chunk)
+    
+    # Fischer Z transformation for the chunk
+    isfc_raw_clipped = np.clip(isfc_raw, -0.99999, 0.99999)
+    isfc_z = np.arctanh(isfc_raw_clipped)
+    
+    return isfc_raw, isfc_z
+
+def run_isfc_computation(data, seed_ts, pairwise=False, chunk_size=None):
+    if chunk_size is None:
+        chunk_size = getattr(config, "CHUNK_SIZE", 30000)
+
+    """
+    Run ISFC computation in parallel chunks.
+    data: (TRs, Voxels, Subjects)
+    seed_ts: (TRs, 1, Subjects)
+    """
+    print(f"Running ISFC computation (Pairwise={pairwise}, Chunk Size: {chunk_size})")
+    n_trs, n_voxels, n_subs = data.shape
+    
+    n_chunks = int(np.ceil(n_voxels / chunk_size))
+    chunks = []
+    for i in range(n_chunks):
+        start_idx = i * chunk_size
+        end_idx = min((i + 1) * chunk_size, n_voxels)
+        chunks.append(data[:, start_idx:end_idx, :])
+        
+    results = Parallel(n_jobs=1, verbose=5)(
+        delayed(compute_isfc_chunk)(chunk, seed_ts, pairwise) for chunk in chunks
+    )
+    
+    # Reassemble
+    # result shape from compute_isfc_chunk is (isfc_raw_chunk, isfc_z_chunk)
+    # where each chunk is (n_samples, V_Chunk)
+    sample_dim = results[0][0].shape[0] # Get n_samples from the first raw chunk
+    
+    isfc_raw = np.zeros((n_voxels, sample_dim), dtype=np.float32)
+    isfc_z = np.zeros((n_voxels, sample_dim), dtype=np.float32)
+    
+    for i, (r_chunk, z_chunk) in enumerate(results):
+        start_idx = i * chunk_size
+        end_idx = min((i + 1) * chunk_size, n_voxels)
+        isfc_raw[start_idx:end_idx, :] = r_chunk.T
+        isfc_z[start_idx:end_idx, :] = z_chunk.T
+        
+    return isfc_raw, isfc_z
 
 def load_mask(mask_path, roi_id=None):
     """

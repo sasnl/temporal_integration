@@ -25,14 +25,73 @@ from isfc.pipeline_utils_dist import (
     get_seed_mask,
     load_seed_data,
     apply_cluster_threshold,
-    apply_tfce,
+    apply_tfce,run_isfc_computation
 )
 
-from isfc.isfc_compute_dist import run_isfc_computation
 
 from dask_jobqueue import SLURMCluster
 from distributed import Client,LocalCluster
 from dask import delayed as dask_delayed
+
+def _compute_loo_null_isfc(group_data, obs_seed_ts, rng):
+    """
+    Compute LOO null ISFC using the correct approach:
+    - For each subject: phase randomize ONLY that subject's seed
+    - Compare the shifted seed to the mean target data of OTHER (unshifted) subjects
+    - Roll through all subjects
+
+    Parameters:
+    -----------
+    group_data : ndarray, shape (n_trs, n_voxels, n_subs)
+    The target voxel data for all subjects
+    obs_seed_ts : ndarray, shape (n_trs, 1, n_subs)
+    The observed seed timeseries for all subjects
+    rng : np.random.RandomState
+    Random state for reproducibility
+
+    Returns:
+    --------
+    loo_isfc : ndarray, shape (n_voxels, n_subs)
+    LOO ISFC values for each subject at each voxel
+    loo_z : ndarray, shape (n_voxels, n_subs)
+    Fisher z-transformed LOO ISFC values
+    """
+    n_trs, n_voxels, n_subs = group_data.shape
+    target_sum = np.sum(group_data, axis=2)  # (n_trs, n_voxels)
+
+    loo_isfc = np.zeros((n_voxels, n_subs), dtype=np.float32)
+
+    for s in range(n_subs):
+        # Phase randomize only subject s's seed timeseries
+        # obs_seed_ts shape is (n_trs, 1, n_subs), get subject s: (n_trs, 1)
+        subj_seed = obs_seed_ts[:, 0, s]  # (n_trs,)
+        shifted_seed = phase_randomize(subj_seed.reshape(-1, 1), random_state=rng).flatten()
+
+        # Compute mean target of OTHER subjects (exclude subject s)
+        others_target_mean = (target_sum - group_data[:, :, s]) / (n_subs - 1)  # (n_trs, n_voxels)
+
+        # Correlate shifted seed with unshifted others' target mean
+        # Demean both
+        shifted_seed_dm = shifted_seed - np.mean(shifted_seed)
+        others_target_dm = others_target_mean - np.mean(others_target_mean, axis=0, keepdims=True)
+
+        # Compute correlation for each voxel
+        # shifted_seed_dm: (n_trs,), others_target_dm: (n_trs, n_voxels)
+        numerator = np.sum(shifted_seed_dm[:, np.newaxis] * others_target_dm, axis=0)
+        denom_seed = np.sqrt(np.sum(shifted_seed_dm ** 2))
+        denom_target = np.sqrt(np.sum(others_target_dm ** 2, axis=0))
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            r = numerator / (denom_seed * denom_target)
+            r = np.nan_to_num(r, nan=0.0)
+
+        loo_isfc[:, s] = r
+
+    # Fisher z-transform
+    loo_isfc_clipped = np.clip(loo_isfc, -0.99999, 0.99999)
+    loo_z = np.arctanh(loo_isfc_clipped)
+
+    return loo_isfc, loo_z
 
 
 def parse_args():
@@ -66,6 +125,7 @@ def parse_args():
                         help="Save phaseshift checkpoint every N permutations")
     parser.add_argument("--resume", action="store_true",
                         help="Resume phaseshift from existing checkpoint in output_dir")
+
     
     # Configurable Paths
     parser.add_argument('--data_dir', type=str, default=config.DATA_DIR,
@@ -74,11 +134,10 @@ def parse_args():
                         help=f'Output directory (default: {config.OUTPUT_DIR})')
     parser.add_argument('--mask_file', type=str, default=config.MASK_FILE,
                         help=f'Path to mask file (default: {config.MASK_FILE})')
-    parser.add_argument('--chunk_size', type=int, default=1000,
+    parser.add_argument('--chunk_size', type=int, default=20000,
                         help=f'Chunk size (default: {config.CHUNK_SIZE})')
-    parser.add_argument("--isfc_method",type=str,choices=["loo", "pairwise"],default="loo",
-        help="ISFC mode for phaseshift stats, also used to namespace checkpoints and null maps")
-
+    parser.add_argument("--isfc_method", type=str, choices=["loo", "pairwise"], default="loo",
+                        help="ISFC method for phaseshift: 'loo' (leave-one-out) or 'pairwise'")
     return parser.parse_args()
 
 def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, tfce_H, seed):
@@ -97,14 +156,24 @@ def _run_bootstrap_iter(i, n_samples, data_centered, use_tfce, mask_3d, tfce_E, 
     else:
         return perm_mean
 
-def _run_phaseshift_iter(i, obs_seed_ts, group_data_path, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed):
+def _run_phaseshift_iter(i, obs_seed_ts, group_data_path, chunk_size, use_tfce, mask, tfce_E, tfce_H, seed,pairwise=False):
+
     # Generate surrogate seed by phase randomizing the OBSERVED seed
     group_data=np.load(group_data_path,mmap_mode="r")
-    surr_seed_ts = phase_randomize(obs_seed_ts, voxelwise=False, random_state=seed)
-    
-    surr_raw, surr_z = run_isfc_computation(group_data, surr_seed_ts, pairwise=False, chunk_size=chunk_size)
-    null_mean = np.nanmean(surr_z, axis=1) # Mean over subjects
-    
+    rng = np.random.RandomState(seed)
+
+    if pairwise:
+        # PAIRWISE MODE: Phase randomize the entire seed timeseries, then compute pairwise ISFC
+        # This is the original approach - valid for pairwise correlations
+        surr_seed_ts = phase_randomize(obs_seed_ts, voxelwise=False, random_state=rng)
+        surr_raw, surr_z = run_isfc_computation(group_data, surr_seed_ts, pairwise=True, chunk_size=chunk_size)
+    else:
+        # LOO MODE: Use correct approach - phase randomize only the left-out subject's seed
+        # and compare to unshifted target mean of others
+        surr_raw, surr_z = _compute_loo_null_isfc(group_data, obs_seed_ts, rng)
+ 
+    null_mean = np.nanmean(surr_z, axis=1)  # Mean over subjects
+ 
     if use_tfce:
         # FWER Correction: Return max statistic
         null_mean_3d = np.zeros(mask.shape, dtype=np.float32)
@@ -181,7 +250,7 @@ def run_bootstrap(data_4d, n_bootstraps=1000, random_state=42, use_tfce=False, m
     return observed_mean, p_values
 
 
-def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file,output_dir, chunk_size=config.CHUNK_SIZE,seed_file=None, use_tfce=False, tfce_E=0.5, tfce_H=2.0,checkpoint_every=25,resume=False):
+def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_dir, mask_file,output_dir, chunk_size=config.CHUNK_SIZE,seed_file=None, use_tfce=False, tfce_E=0.5, tfce_H=2.0,checkpoint_every=25,resume=False,pairwise=False):
     """
     Run Phase Shift randomization.
     
@@ -194,8 +263,10 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
     tfce_H : float
         TFCE height parameter
     """
-    print(f"Running Phase Shift (n={n_perms}, chunk_size={chunk_size})...")
-    isfc_method_dir= os.path.normpath(output_dir).split(os.sep)[-1]
+    # Derive method string from pairwise parameter (not from path)
+
+    isfc_method_str = "pairwise" if pairwise else "loo"
+    print(f"Running Phase Shift (n={n_perms}, chunk_size={chunk_size}, pairwise={pairwise})...")
 
     mask, affine = load_mask(mask_file, roi_id=roi_id)
     if np.sum(mask) == 0: raise ValueError("Empty mask")
@@ -227,7 +298,7 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
     
     # 1. Observed
     print("  Computing Observed ISFC...")
-    obs_isfc_raw, obs_isfc_z = run_isfc_computation(group_data, obs_seed_ts, pairwise=False, chunk_size=chunk_size)
+    obs_isfc_raw, obs_isfc_z = run_isfc_computation(group_data, obs_seed_ts, pairwise=pairwise, chunk_size=chunk_size)
     obs_mean_z = np.nanmean(obs_isfc_z, axis=1) # (V,)
     n_voxels = int(obs_mean_z.shape[0])
 
@@ -245,35 +316,32 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
     memory='64GB',
     local_directory='/scratch/users/daelsaid/',
     walltime='10:00:00',
-    death_timeout=600,)
-    # job_script_prologue=["export PATH=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/isc_env/bin:$PATH",
-    # f"export PYTHONPATH={TI_CODE_DIR}:$PYTHONPATH",
-    # "export OMP_NUM_THREADS=1",
-    # "export MKL_NUM_THREADS=1",
-    # "export OPENBLAS_NUM_THREADS=1",
-    # "export NUMEXPR_NUM_THREADS=1",
-    # "export VECLIB_MAXIMUM_THREADS=1"])
-    cluster.scale(jobs=2)
+    death_timeout=600,
+    job_script_prologue=["export PATH=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/isc_env/bin:$PATH",
+    f"export PYTHONPATH={TI_CODE_DIR}:$PYTHONPATH",
+    "export OMP_NUM_THREADS=1",
+    "export MKL_NUM_THREADS=1",
+    "export OPENBLAS_NUM_THREADS=1",
+    "export NUMEXPR_NUM_THREADS=1",
+    "export VECLIB_MAXIMUM_THREADS=1"])
+    cluster.scale(jobs=8)
 
     #cluster = LocalCluster(n_workers=1, threads_per_worker=8)
     client=Client(cluster)
-    
     client.upload_file('../isfc/config.py')
     client.upload_file('../isfc/pipeline_utils_dist.py')
-    client.wait_for_workers(1)
+    client.wait_for_workers(2)
     client.run(lambda: __import__("os").environ.get("SLURM_MEM_PER_NODE", "no_slurm_mem"))
 
     if output_dir is None:
         raise ValueError("output_dir is required for checkpointing and resume")
  
-    if isfc_method_dir not in ("loo", "pairwise"):
-        raise ValueError(f"Unexpected isfc_method: {isfc_method_dir}")
-
-    ckpt_name = f"isfc_{condition}_phaseshift_{isfc_method_dir}"
+    # Use isfc_method_str derived from pairwise parameter (already defined above)
+    ckpt_name = f"isfc_{condition}_phaseshift_{isfc_method_str}"
     run_tag = ckpt_name
-
-    nullmaps_dir = os.path.join(output_dir, f"null_maps_{condition}", run_tag)
-    print(nullmaps_dir)
+ 
+    nullmaps_dir = os.path.join(output_dir, f"null_maps_{isfc_method_str}_{condition}", run_tag)
+    print(f"Null maps directory: {nullmaps_dir}")
     os.makedirs(nullmaps_dir, exist_ok=True)
 
 
@@ -303,7 +371,7 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
         "seed_coords": tuple(seed_coords) if seed_coords is not None else None,
         "seed_radius": float(seed_radius) if seed_radius is not None else None,
         "seed_file": os.path.abspath(seed_file) if seed_file else None,
-        "isfc_method_dir":str(isfc_method_dir)
+        "pairwise":bool(pairwise)
 
     }
 
@@ -339,6 +407,7 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
                 tfce_E,
                 tfce_H,
                 1000 + i,
+                pairwise
             )
             for i in range(b0, b1)
         ]
@@ -401,14 +470,15 @@ def main():
     mask_file = args.mask_file
     chunk_size = args.chunk_size
     isfc_method = args.isfc_method
-
+    pairwise = (isfc_method == "pairwise")
+ 
     print(f"--- Step 2: ISFC Statistics ---")
     print(f"Method: {method}")
+    print(f"ISFC Method: {isfc_method} (pairwise={pairwise})")
     print(f"Threshold: {threshold}")
     print(f"Output Dir: {output_dir}")
     print(f"Data Dir: {data_dir}")
     print(f"Chunk Size: {chunk_size}")
-    print(f"ISFC Mode: {isfc_method}")
 
     # ... (initialization) ...
     
@@ -442,12 +512,11 @@ def main():
         #     data_dir=data_dir, mask_file=mask_file, output_dir=output_dir, chunk_size=chunk_size, seed_file=args.seed_file,use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H,checkpoint_every=args.checkpoint_every,resume=args.resume)
         # output_dir = os.path.join(args.output_dir,args.condition,isfc_method)
         mean_map, p_values, mask_data, mask_affine = run_phaseshift(
-            args.condition, args.roi_id, seed_coords, args.seed_radius, args.n_perms,
-            data_dir=data_dir, mask_file=mask_file, output_dir=output_dir, chunk_size=chunk_size,
-            seed_file=args.seed_file, use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H,
-            checkpoint_every=args.checkpoint_every, resume=args.resume)
+            args.condition, args.roi_id, seed_coords, args.seed_radius, args.n_perms,data_dir=data_dir, mask_file=mask_file, output_dir=output_dir, chunk_size=chunk_size,
+            seed_file=args.seed_file, use_tfce=args.use_tfce, tfce_E=args.tfce_E, tfce_H=args.tfce_H,checkpoint_every=args.checkpoint_every, resume=args.resume,pairwise=pairwise)
 
-        base_name = f"isfc_{args.condition}_{method}{seed_suffix}"
+        # Include isfc_method in base_name to prevent overwriting between loo and pairwise runs
+        base_name = f"isfc_{args.condition}_{isfc_method}_{method}{seed_suffix}"
 
         
     else: # Map based
