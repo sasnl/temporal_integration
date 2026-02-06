@@ -7,6 +7,7 @@ from scipy.stats import ttest_1samp
 from brainiak.utils.utils import phase_randomize
 from joblib import Parallel, delayed
 from dask.distributed import progress
+import time
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -313,26 +314,44 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
     queue='menon,owners,normal',
     processes=1,
     cores=1,
-    memory='64GB',
+    memory='32GB',
     local_directory='/scratch/users/daelsaid/',
-    walltime='10:00:00',
-    death_timeout=600,
+    walltime='12:00:00',
+    death_timeout=1800,
     job_script_prologue=["export PATH=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/isc_env/bin:$PATH",
     f"export PYTHONPATH={TI_CODE_DIR}:$PYTHONPATH",
     "export OMP_NUM_THREADS=1",
     "export MKL_NUM_THREADS=1",
     "export OPENBLAS_NUM_THREADS=1",
     "export NUMEXPR_NUM_THREADS=1",
+    "export LOKY_MAX_CPU_COUNT=1",
     "export VECLIB_MAXIMUM_THREADS=1"])
-    cluster.scale(jobs=8)
+    cluster.scale(jobs=4)
 
     #cluster = LocalCluster(n_workers=1, threads_per_worker=8)
     client=Client(cluster)
     client.upload_file('../isfc/config.py')
     client.upload_file('../isfc/pipeline_utils_dist.py')
-    client.wait_for_workers(2)
-    client.run(lambda: __import__("os").environ.get("SLURM_MEM_PER_NODE", "no_slurm_mem"))
+    client.wait_for_workers(4)
+    # client.run(lambda: __import__("os").environ.get("SLURM_MEM_PER_NODE", "no_slurm_mem"))
+    print(f"Connected to {len(client.scheduler_info()['workers'])} workers", flush=True)
+    # print("Submitted futures:", len(batch_futures), flush=True)
+    def _warm_group_data(path):
+        import numpy as np
+        arr = np.load(path, mmap_mode="r")
+        _ = float(arr[0:10, 0:10, 0].sum())
+        _ = float(arr[-10:, -10:, -1].sum())
+        return {"shape": arr.shape, "dtype": str(arr.dtype)}
+    print(f"Worker warmup: {client.run(_warm_group_data, group_data_path)}", flush=True)
 
+
+    info = client.scheduler_info()
+    print("Scheduler tasks total:", info.get("tasks", {}).__len__(), flush=True)
+    print("Workers:", len(info.get("workers", {})), flush=True)
+
+    processing = client.processing()
+    n_running = sum(len(v) for v in processing.values())
+    print("Tasks currently processing:", n_running, flush=True)
     if output_dir is None:
         raise ValueError("output_dir is required for checkpointing and resume")
  
@@ -380,6 +399,9 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
         completed = int(ck["completed"])
         meta = ck["meta"].item()
 
+        if "n_perms" not in meta:
+            meta["n_perms"] = int(n_perms)
+            print(f"  Note: Old checkpoint missing n_perms, assuming {n_perms}", flush=True)
         if meta != expected_meta:
             raise ValueError(f"Checkpoint meta mismatch.\nFound: {meta}\nExpected: {expected_meta}")
 
@@ -391,6 +413,7 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
         print(f"Resuming from checkpoint {ckpt_path}", flush=True)
         print(f"Completed permutations: {completed} / {n_perms}", flush=True)
     print(f"Starting {n_perms} permutations", flush=True)
+    t0 = time.time()
 
     for b0 in range(completed, n_perms, checkpoint_every):
         b1 = min(b0 + checkpoint_every, n_perms)
@@ -413,15 +436,45 @@ def run_phaseshift(condition, roi_id, seed_coords, seed_radius, n_perms, data_di
         ]
 
         futures = client.compute(tasks)
+        print(f"Created {len(futures)} futures in {time.time() - t0:.2f}s", flush=True)
+ 
+        processing = client.processing()
+        n_running = sum(len(v) for v in processing.values())
+        print(f"Tasks processing right after submit: {n_running}", flush=True)
+ 
         progress(futures)
         batch_results = client.gather(futures)
+        print(f"Batch completed in {time.time() - t0:.2f}s", flush=True)
+
+        progress(futures)
+        batch_results = client.gather(futures)
+        print(f"Batch completed in {time.time() - t0:.2f}s", flush=True)
 
         if use_tfce:
             null_max_stats.extend([float(x) for x in batch_results])
         else:
+            batch_null_means = []
             for null_mean in batch_results:
                 null_mean = null_mean.astype(np.float32)
+                batch_null_means.append(null_mean)
                 count_greater += (np.abs(null_mean) >= abs_obs).astype(np.int32)
+ 
+            batch_null_means = np.stack(batch_null_means, axis=1)  # (n_voxels, batch_size)
+ 
+            batch_fname = f"nullmeans_perm{b0:04d}_{b1-1:04d}.npz"
+            batch_path = os.path.join(nullmaps_dir, batch_fname)
+ 
+            if not os.path.exists(batch_path):
+                np.savez_compressed(
+                    batch_path,
+                    null_means=batch_null_means,
+                    perm_start=b0,
+                    perm_end=b1 - 1
+                )
+                print(f"  Saved null maps: {batch_path}")
+            else:
+                print(f"  Null maps already exist, skipping save: {batch_path}")
+
 
         completed = b1
 

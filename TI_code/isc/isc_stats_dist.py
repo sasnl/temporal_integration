@@ -331,25 +331,41 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
     queue='menon,owners,normal',
     processes=1,
     cores=1,
-    memory='64GB',
+    memory='96GB',
     local_directory='/scratch/users/daelsaid/',
-    walltime='10:00:00',
-    death_timeout=600,
+    walltime='12:00:00',
+    death_timeout=1800,
     job_script_prologue=["export PATH=/oak/stanford/groups/menon/projects/daelsaid/2022_speaker_listener/scripts/taskfmri/temporal_integration/isc_env/bin:$PATH",
     f"export PYTHONPATH={TI_CODE_DIR}:$PYTHONPATH",
     "export OMP_NUM_THREADS=1",
     "export MKL_NUM_THREADS=1",
     "export OPENBLAS_NUM_THREADS=1",
+    "export LOKY_MAX_CPU_COUNT=1",
     "export NUMEXPR_NUM_THREADS=1",
     "export VECLIB_MAXIMUM_THREADS=1"])
-    cluster.scale(jobs=8)
+    cluster.scale(jobs=12)
     #cluster = LocalCluster(n_workers=1, threads_per_worker=8)
     client=Client(cluster)
     
     client.upload_file('../isc/config.py')
     client.upload_file('../isc/pipeline_utils_dist.py')
-    client.wait_for_workers(2)
-    client.run(lambda: __import__("os").environ.get("SLURM_MEM_PER_NODE", "no_slurm_mem"))
+    client.wait_for_workers(4)
+    # client.run(lambda: __import__("os").environ.get("SLURM_MEM_PER_NODE", "no_slurm_mem"))
+    print(f"Connected to {len(client.scheduler_info()['workers'])} workers", flush=True)
+    def _probe_path(path):
+        import os
+        return {"exists": os.path.exists(path), "readable": os.access(path, os.R_OK)}
+    print(f"Worker path check: {client.run(_probe_path, group_data_path)}", flush=True)
+
+    # Warm up the mmap file on each worker
+    def _warm_group_data(path):
+        import numpy as np
+        arr = np.load(path, mmap_mode="r")
+        _ = float(arr[0:10, 0:10, 0].sum())
+        _ = float(arr[-10:, -10:, -1].sum())
+        return {"shape": arr.shape, "dtype": str(arr.dtype)}
+    print(f"Worker warmup: {client.run(_warm_group_data, group_data_path)}", flush=True)
+
 
     if output_dir is None:
         raise ValueError("output_dir is required for checkpointing and resume")
@@ -392,6 +408,9 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
             "n_voxels": int(n_voxels),
             "pairwise": bool(pairwise),
         }
+        if "n_perms" not in meta:
+            meta["n_perms"] = int(n_perms)
+            print(f"  Note: Old checkpoint missing n_perms, assuming {n_perms}")
         if meta != expected:
             raise ValueError(f"Checkpoint meta mismatch.\nFound: {meta}\nExpected: {expected}")
 
@@ -417,13 +436,22 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
 
         # for i in range(b0,b1):
         #     batch_results = _run_phaseshift_iter(i, n_perms, group_data, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i)
+        t0 = time.time()
 
-        tasks=[delayed(_run_phaseshift_iter)(i, n_perms, group_data_path, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i,pairwise) for i in range(b0,b1)]
-        batch_results=client.compute(tasks)
-        # futures=client.persist(batch_results)
-        # results=client.gather(futures)
-        progress(batch_results)
-        batch_results=client.gather(batch_results)
+        tasks=[delayed(_run_phaseshift_iter)(i, n_perms, group_data_path, chunk_size, use_tfce, mask, tfce_E, tfce_H, 1000 + i, pairwise) for i in range(b0,b1)]
+        futures=client.compute(tasks)
+        print(f"  Created {len(futures)} futures in {time.time() - t0:.2f}s", flush=True)
+
+        # Check how many tasks are processing
+        processing = client.processing()
+        n_running = sum(len(v) for v in processing.values())
+        print(f"  Tasks processing right after submit: {n_running}", flush=True)
+
+        progress(futures)
+        batch_results=client.gather(futures)
+        print(f"  Batch completed in {time.time() - t0:.2f}s", flush=True)
+
+
         if use_tfce:
             null_max_stats.extend([float(x) for x in batch_results])
         else:
@@ -459,6 +487,7 @@ def run_phaseshift(condition, roi_id, n_perms, data_dir, mask_file, output_dir, 
             "tfce_E": float(tfce_E),
             "tfce_H": float(tfce_H),
             "n_voxels": int(n_voxels),
+            "n_perms": int(n_perms),
             "pairwise": bool(pairwise)
         }
 
