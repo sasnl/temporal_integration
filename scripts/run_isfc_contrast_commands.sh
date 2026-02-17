@@ -2,6 +2,9 @@
 # Run ISFC Contrast Analysis with Bootstrap & TFCE
 # Seeds: PMC, Left pSTS, Right pSTS
 
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
 DATA_BASE="/Users/tongshan/Documents/TemporalIntegration/result/ISFC/bootstrap/tfce"
 
 SEEDS=("seed0_-53_2_r5" "seed-63_-42_9_r5" "seed57_-31_5_r5")

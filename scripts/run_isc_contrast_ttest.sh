@@ -1,6 +1,9 @@
 #!/bin/bash
 # Run Uncorrected T-test ISC Contrast Analysis for all 3 pairs, using both LOO and Pairwise methods
 
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
 DATA_DIR="/Users/tongshan/Documents/TemporalIntegration/result/ISC/ISC_bootstrap/fdr"
 
 # 1. LOO

@@ -2,6 +2,9 @@
 # Run ISFC Contrast Analysis with Uncorrected T-test
 # Seeds: PMC, Left pSTS, Right pSTS
 
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
 DATA_BASE="/Users/tongshan/Documents/TemporalIntegration/result/ISFC/bootstrap/tfce"
 # Note: Data source is the same (Z-score maps), regardless of stat method used later.
 

@@ -6,6 +6,9 @@
 # 2. PMC: seed0_-53_2_r5
 # 3. Right HG: seed57_-31_5_r5
 
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
 SEEDS=("seed-63_-42_9_r5" "seed0_-53_2_r5" "seed57_-31_5_r5")
 CONDS=("TI1_orig" "TI1_sent" "TI1_word")
 CSV="data/demographic/60483ASDSpeakerListe-TISubjectDemographic_DATA_2026-01-29_1113_merged.csv"
@@ -34,7 +37,7 @@ for SEED in "${SEEDS[@]}"; do
         
         if [ -f "$FILE" ]; then
             echo "Running ${COND}..."
-            python code/TI_code/isfc/run_isfc_behavior_corr.py \
+            python isfc/run_isfc_behavior_corr.py \
                 --input_file "$FILE" \
                 --condition "$COND" \
                 --csv_file "$CSV" \
@@ -52,7 +55,7 @@ for SEED in "${SEEDS[@]}"; do
     
     if [ -f "$FILE1" ] && [ -f "$FILE2" ]; then
         echo "Running Contrast: TI1_orig vs TI1_word..."
-        python code/TI_code/isfc/run_isfc_behavior_corr.py \
+        python isfc/run_isfc_behavior_corr.py \
             --input_file "$FILE1" \
             --contrast_file "$FILE2" \
             --condition "TI1_orig" \

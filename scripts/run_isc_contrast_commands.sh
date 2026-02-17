@@ -2,6 +2,9 @@
 # Run ISC Contrast Analysis for all 3 pairs, using both LOO and Pairwise methods
 # Method: Bootstrap with TFCE
 
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
 # 1. LOO
 echo "--- Running LOO Contrasts ---"
 # Note: Using Files found in result/ISC/ISC_bootstrap/fdr/loo/
