@@ -213,7 +213,7 @@ def save_map(data, mask, affine, output_path):
     nib.save(img, output_path)
     return output_path
 
-def save_plot(nifti_path, output_image_path, title, dpi=300, transparent=True, positive_only=False):
+def save_plot(nifti_path, output_image_path, title, dpi=300, transparent=True, positive_only=False, cut_coords=8):
     """
     Generate and save a static plot of a nifti map.
     """
@@ -239,7 +239,7 @@ def save_plot(nifti_path, output_image_path, title, dpi=300, transparent=True, p
             img_to_plot, 
             title=title, 
             display_mode='z', 
-            cut_coords=8, 
+            cut_coords=cut_coords, 
             colorbar=True,
             black_bg=True,
             symmetric_cbar=symmetric_cbar,

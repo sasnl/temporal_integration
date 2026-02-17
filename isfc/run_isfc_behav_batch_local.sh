@@ -8,8 +8,8 @@
 
 SEEDS=("seed-63_-42_9_r5" "seed0_-53_2_r5" "seed57_-31_5_r5")
 CONDS=("TI1_orig" "TI1_sent" "TI1_word")
-CSV="data/demographic/60483ASDSpeakerListe-TISubjectDemographic_DATA_2026-01-15_1602_combined.csv"
-COL="srs_com_standard"
+CSV="data/demographic/60483ASDSpeakerListe-TISubjectDemographic_DATA_2026-01-29_1113_merged.csv"
+COL="fsid0079wasi_ii_0007_ffid002642_fsiq"
 PERMS=1000
 INPUT_DIR="result/ISFC/bootstrap/tfce/loo"
 
@@ -20,9 +20,17 @@ for SEED in "${SEEDS[@]}"; do
     echo "Processing Seed: ${SEED}"
     echo "==================================================="
     
+    # Map Seed to Subfolder (Friendly Name)
+    case "$SEED" in
+        "seed-63_-42_9_r5") SUBDIR="LpSTS" ;;
+        "seed0_-53_2_r5")   SUBDIR="PMC" ;;
+        "seed57_-31_5_r5")  SUBDIR="RpSTS" ;;
+        *) echo "Unknown Seed: $SEED"; exit 1 ;;
+    esac
+    
     # 1. Run Single Conditions
     for COND in "${CONDS[@]}"; do
-        FILE="${INPUT_DIR}/isfc_${COND}_loo_${SEED}_desc-zscore.nii.gz"
+        FILE="${INPUT_DIR}/${SUBDIR}/isfc_${COND}_loo_${SEED}_desc-zscore.nii.gz"
         
         if [ -f "$FILE" ]; then
             echo "Running ${COND}..."
@@ -39,8 +47,8 @@ for SEED in "${SEEDS[@]}"; do
     done
     
     # 2. Run Contrast: TI1_orig vs TI1_word
-    FILE1="${INPUT_DIR}/isfc_TI1_orig_loo_${SEED}_desc-zscore.nii.gz"
-    FILE2="${INPUT_DIR}/isfc_TI1_word_loo_${SEED}_desc-zscore.nii.gz"
+    FILE1="${INPUT_DIR}/${SUBDIR}/isfc_TI1_orig_loo_${SEED}_desc-zscore.nii.gz"
+    FILE2="${INPUT_DIR}/${SUBDIR}/isfc_TI1_word_loo_${SEED}_desc-zscore.nii.gz"
     
     if [ -f "$FILE1" ] && [ -f "$FILE2" ]; then
         echo "Running Contrast: TI1_orig vs TI1_word..."
