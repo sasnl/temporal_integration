@@ -34,49 +34,72 @@ def parse_args():
     
     parser.add_argument('--data_dir', type=str, default=config.OUTPUT_DIR, help='Directory containing ISC/ISFC results (Maps)')
     parser.add_argument('--output_dir', type=str, default=config.OUTPUT_DIR, help='Output directory')
-    parser.add_argument('--subject_list_file', type=str, 
+    parser.add_argument('--subject_list_file', type=str,
                         default='/Users/tongshan/Documents/TemporalIntegration/data/Temporal_integrartion_subjectlist_2026_01_16_updated_filtering.xlsx',
                         help='Path to Subject List Excel file')
-    
+    parser.add_argument('--auto_subjects_dir', type=str, default=None,
+                        help='Auto-detect subjects from .nii files in this directory (bypasses config and Excel)')
+
     return parser.parse_args()
 
-def load_subject_intersection(cond1, cond2, excel_path):
+def load_subject_intersection(cond1, cond2, excel_path, auto_subjects_dir=None):
     """
     Returns list of subject IDs present in both conditions AND marked as 'have_all_3' in Excel.
+    If auto_subjects_dir is set, auto-detect subjects from .nii files instead of config.
     """
     print(f"Loading subject lists...")
-    
-    # 1. Config lists
-    if cond1 not in config.SUBJECT_LISTS or cond2 not in config.SUBJECT_LISTS:
-        raise ValueError(f"Conditions {cond1} or {cond2} not found in config.SUBJECT_LISTS")
-        
-    list1 = [str(s) for s in config.SUBJECT_LISTS[cond1]]
-    list2 = [str(s) for s in config.SUBJECT_LISTS[cond2]]
-    
-    # 2. Excel List
-    if not os.path.exists(excel_path):
-         raise FileNotFoundError(f"Subject list file not found: {excel_path}")
-         
-    df = pd.read_excel(excel_path)
-    # Filter have_all_3
-    if 'have_all_3' not in df.columns or 'PID' not in df.columns:
-         raise ValueError("Excel file must contain 'PID' and 'have_all_3' columns")
-         
-    valid_subjects = df[df['have_all_3'] == 1]['PID'].astype(str).tolist()
-    
-    # 3. Intersection
-    common = set(list1) & set(list2) & set(valid_subjects)
-    common_sorted = sorted(list(common))
-    
-    print(f"  Condition {cond1}: {len(list1)} subjects")
-    print(f"  Condition {cond2}: {len(list2)} subjects")
-    print(f"  Valid 'have_all_3': {len(valid_subjects)} subjects")
-    print(f"  Final Intersection: {len(common_sorted)} subjects")
-    print(f"  Subjects: {common_sorted}")
-    
+
+    if auto_subjects_dir:
+        # Auto-detect subjects from data directory
+        import glob as glob_mod
+        cond1_dir = os.path.join(auto_subjects_dir, cond1)
+        cond2_dir = os.path.join(auto_subjects_dir, cond2)
+        files1 = sorted(glob_mod.glob(os.path.join(cond1_dir, '*.nii')))
+        files2 = sorted(glob_mod.glob(os.path.join(cond2_dir, '*.nii')))
+        list1 = sorted(set(os.path.basename(f).split('_')[0] for f in files1))
+        list2 = sorted(set(os.path.basename(f).split('_')[0] for f in files2))
+
+        # Intersection of both conditions (no Excel filtering)
+        common = set(list1) & set(list2)
+        common_sorted = sorted(list(common))
+
+        print(f"  Auto-detected from {auto_subjects_dir}")
+        print(f"  Condition {cond1}: {len(list1)} subjects")
+        print(f"  Condition {cond2}: {len(list2)} subjects")
+        print(f"  Final Intersection: {len(common_sorted)} subjects")
+        print(f"  Subjects: {common_sorted}")
+    else:
+        # 1. Config lists
+        if cond1 not in config.SUBJECT_LISTS or cond2 not in config.SUBJECT_LISTS:
+            raise ValueError(f"Conditions {cond1} or {cond2} not found in config.SUBJECT_LISTS")
+
+        list1 = [str(s) for s in config.SUBJECT_LISTS[cond1]]
+        list2 = [str(s) for s in config.SUBJECT_LISTS[cond2]]
+
+        # 2. Excel List
+        if not os.path.exists(excel_path):
+             raise FileNotFoundError(f"Subject list file not found: {excel_path}")
+
+        df = pd.read_excel(excel_path)
+        # Filter have_all_3
+        if 'have_all_3' not in df.columns or 'PID' not in df.columns:
+             raise ValueError("Excel file must contain 'PID' and 'have_all_3' columns")
+
+        valid_subjects = df[df['have_all_3'] == 1]['PID'].astype(str).tolist()
+
+        # 3. Intersection
+        common = set(list1) & set(list2) & set(valid_subjects)
+        common_sorted = sorted(list(common))
+
+        print(f"  Condition {cond1}: {len(list1)} subjects")
+        print(f"  Condition {cond2}: {len(list2)} subjects")
+        print(f"  Valid 'have_all_3': {len(valid_subjects)} subjects")
+        print(f"  Final Intersection: {len(common_sorted)} subjects")
+        print(f"  Subjects: {common_sorted}")
+
     if len(common_sorted) == 0:
         raise ValueError("No common subjects found!")
-        
+
     return common_sorted, list1, list2
 
 def load_and_match_data(cond1, cond2, type_str, isc_method, seed_name, common_subs, list1, list2, data_dir, roi_id):
@@ -257,7 +280,7 @@ def main():
     args = parse_args()
     
     # 1. Subjects
-    common_subs, list1, list2 = load_subject_intersection(args.cond1, args.cond2, args.subject_list_file)
+    common_subs, list1, list2 = load_subject_intersection(args.cond1, args.cond2, args.subject_list_file, auto_subjects_dir=args.auto_subjects_dir)
     
     # 2. Load Data
     data1, data2, mask_data, mask_affine = load_and_match_data(
