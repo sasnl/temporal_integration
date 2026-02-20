@@ -61,7 +61,14 @@ def main():
         return
 
     # Load Data
-    if condition in config.SUBJECT_LISTS:
+    # Auto-detect subjects from data directory if not using default data path
+    if data_dir != config.DATA_DIR:
+        import glob as glob_mod
+        cond_dir = os.path.join(data_dir, condition)
+        files = sorted(glob_mod.glob(os.path.join(cond_dir, '*.nii')))
+        subjects = sorted(set(os.path.basename(f).split('_')[0] for f in files))
+        print(f"Auto-detected {len(subjects)} subjects from {cond_dir}: {subjects}")
+    elif condition in config.SUBJECT_LISTS:
         subjects = config.SUBJECT_LISTS[condition]
         print(f"Using subject list for condition {condition}: {len(subjects)} subjects")
     else:
