@@ -37,3 +37,26 @@ SUBJECT_LISTS = {
 # Default fall-back (union of all or just generic) if needed, but scripts should use the dict above
 SUBJECTS = SUBJECT_LISTS['TI1_orig'] # Backward compatibility default
 CHUNK_SIZE = 5000
+
+# --- ASD GROUP ---
+ASD_DATA_DIR = '/Users/tongshan/Documents/TemporalIntegration/data/asd_ti_processed'
+ASD_OUTPUT_DIR = '/Users/tongshan/Documents/TemporalIntegration/result/ASD'
+GROUP_OUTPUT_DIR = '/Users/tongshan/Documents/TemporalIntegration/result/group_comparison'
+
+ASD_SUBJECT_LISTS = {
+    'TI1_orig': [
+        '12511', '12520', '12521', '12529', '12539', '12544',
+        '12546', '12547', '12549', '14999', '9143', '9277',
+        '9317', '9488'
+    ],
+    'TI1_sent': [
+        '12511', '12520', '12521', '12525', '12529', '12539',
+        '12544', '12546', '12547', '12549', '9143', '9277',
+        '9317'
+    ],
+    'TI1_word': [
+        '12511', '12529', '12539', '12540', '12544', '12546',
+        '12547', '12549', '14999', '9143', '9277', '9317',
+        '9488'
+    ]
+}
